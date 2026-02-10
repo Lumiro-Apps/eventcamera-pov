@@ -1,0 +1,9 @@
+{
+  "name": "@poveventcam/ui-organizer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'Web UI package typecheck not configured yet.'"
+  }
+}

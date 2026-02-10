@@ -1,0 +1,63 @@
+const DEFAULT_PORT = 3000;
+const DEFAULT_SIGNED_URL_TTL_SECONDS = 15 * 60;
+
+function parsePort(input: string | undefined): number {
+  if (!input) return DEFAULT_PORT;
+
+  const parsed = Number.parseInt(input, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return DEFAULT_PORT;
+  }
+
+  return parsed;
+}
+
+function parsePositiveInt(input: string | undefined, fallback: number): number {
+  if (!input) return fallback;
+
+  const parsed = Number.parseInt(input, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function requireFirstEnv(names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) {
+      return value;
+    }
+  }
+
+  throw new Error(`Missing required environment variable. Tried: ${names.join(', ')}`);
+}
+
+export const env = {
+  nodeEnv: process.env.NODE_ENV ?? 'development',
+  port: parsePort(process.env.PORT),
+  supabaseUrl: requireEnv('SUPABASE_URL'),
+  supabasePublishableKey: requireFirstEnv([
+    'SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY'
+  ]),
+  supabaseSecretKey: requireFirstEnv(['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY']),
+  supabaseDbUrl: requireEnv('SUPABASE_DB_URL'),
+  storageOriginalsBucket: process.env.SUPABASE_STORAGE_ORIGINALS_BUCKET ?? 'originals',
+  storageThumbsBucket: process.env.SUPABASE_STORAGE_THUMBS_BUCKET ?? 'thumbs',
+  storageArchiveBucket: process.env.SUPABASE_STORAGE_ARCHIVE_BUCKET ?? 'archives',
+  signedUrlTtlSeconds: parsePositiveInt(
+    process.env.SIGNED_URL_TTL_SECONDS,
+    DEFAULT_SIGNED_URL_TTL_SECONDS
+  )
+};

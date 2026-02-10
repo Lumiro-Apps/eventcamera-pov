@@ -1,0 +1,9 @@
+{
+  "name": "@poveventcam/ui-organizer-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'Mobile UI package typecheck not configured yet.'"
+  }
+}

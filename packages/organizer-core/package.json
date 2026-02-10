@@ -1,0 +1,9 @@
+{
+  "name": "@poveventcam/organizer-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'Organizer core typecheck not configured yet.'"
+  }
+}

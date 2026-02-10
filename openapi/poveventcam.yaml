@@ -1,0 +1,1664 @@
+openapi: 3.0.3
+info:
+  title: POV EventCamera API
+  version: 0.1.0-draft
+  description: |
+    Draft OpenAPI contract for POV Cam guest and organizer APIs.
+    This spec mirrors the current architecture docs and is intended as the
+    starting point for typed client generation and server contract tests.
+servers:
+  - url: https://eventpovcamera.app
+    description: Organizer web entry domain
+  - url: https://guest.eventpovcamera.app
+    description: Guest web entry domain
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Guest
+  - name: OrganizerEvents
+  - name: OrganizerMedia
+  - name: OrganizerGuests
+  - name: OrganizerJobs
+  - name: Webhooks
+
+paths:
+  /api/join:
+    post:
+      tags: [Guest]
+      summary: Join an event and create a guest device session
+      operationId: guestJoinEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRequest'
+      responses:
+        '200':
+          description: Joined successfully
+          headers:
+            Set-Cookie:
+              description: HttpOnly host-only cookie for guest.eventpovcamera.app containing device session token
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/my-session:
+    get:
+      tags: [Guest]
+      summary: Validate guest session and return session + event metadata
+      operationId: guestGetMySession
+      security:
+        - GuestSessionCookie: []
+      responses:
+        '200':
+          description: Session is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MySessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Guest]
+      summary: Update guest display name
+      operationId: guestPatchMySession
+      security:
+        - GuestSessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchMySessionRequest'
+      responses:
+        '200':
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MySessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/create-upload:
+    post:
+      tags: [Guest]
+      summary: Reserve a media upload slot and return signed upload URLs
+      operationId: guestCreateUpload
+      security:
+        - GuestSessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadRequest'
+      responses:
+        '200':
+          description: Upload slot reserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/complete-upload:
+    post:
+      tags: [Guest]
+      summary: Verify uploaded object and mark media as uploaded
+      operationId: guestCompleteUpload
+      security:
+        - GuestSessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadRequest'
+      responses:
+        '200':
+          description: Upload completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/my-uploads:
+    get:
+      tags: [Guest]
+      summary: List uploads that belong to the current guest session
+      operationId: guestGetMyUploads
+      security:
+        - GuestSessionCookie: []
+      responses:
+        '200':
+          description: Upload list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyUploadsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events:
+    post:
+      tags: [OrganizerEvents]
+      summary: Create organizer event
+      operationId: organizerCreateEvent
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+      responses:
+        '200':
+          description: Event created or payment redirect required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CreateEventSuccessResponse'
+                  - $ref: '#/components/schemas/PaymentRedirectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags: [OrganizerEvents]
+      summary: List events for organizer
+      operationId: organizerListEvents
+      security:
+        - OrganizerBearerAuth: []
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}:
+    get:
+      tags: [OrganizerEvents]
+      summary: Get event detail and summary stats
+      operationId: organizerGetEvent
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event detail
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: '#/components/schemas/EventDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [OrganizerEvents]
+      summary: Update event settings
+      operationId: organizerPatchEvent
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchEventRequest'
+      responses:
+        '200':
+          description: Event updated or payment redirect required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EventMutationSuccessResponse'
+                  - $ref: '#/components/schemas/PaymentRedirectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/close:
+    post:
+      tags: [OrganizerEvents]
+      summary: Close event (stop accepting guest uploads)
+      operationId: organizerCloseEvent
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventMutationSuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/archive:
+    post:
+      tags: [OrganizerEvents]
+      summary: Archive event
+      operationId: organizerArchiveEvent
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventMutationSuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/gallery:
+    get:
+      tags: [OrganizerMedia]
+      summary: Get paginated media gallery for event
+      operationId: organizerGetGallery
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/FilterDate'
+        - $ref: '#/components/parameters/FilterSession'
+        - $ref: '#/components/parameters/FilterUploader'
+        - $ref: '#/components/parameters/FilterTag'
+      responses:
+        '200':
+          description: Gallery page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/gallery/stats:
+    get:
+      tags: [OrganizerMedia]
+      summary: Get event gallery stats
+      operationId: organizerGetGalleryStats
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Gallery stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryStatsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/media/{mid}/hide:
+    post:
+      tags: [OrganizerMedia]
+      summary: Hide one media item
+      operationId: organizerHideMedia
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200':
+          description: Media hidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaMutationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/media/{mid}/unhide:
+    post:
+      tags: [OrganizerMedia]
+      summary: Unhide one media item
+      operationId: organizerUnhideMedia
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200':
+          description: Media unhidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaMutationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/media/bulk-hide:
+    post:
+      tags: [OrganizerMedia]
+      summary: Hide multiple media items
+      operationId: organizerBulkHideMedia
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkHideRequest'
+      responses:
+        '200':
+          description: Bulk hide completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkHideResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/media/{mid}/download-url:
+    get:
+      tags: [OrganizerMedia]
+      summary: Get signed download URL for original media
+      operationId: organizerGetMediaDownloadUrl
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200':
+          description: Download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/download-all:
+    post:
+      tags: [OrganizerMedia]
+      summary: Trigger async ZIP job for event downloads
+      operationId: organizerDownloadAll
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadAllRequest'
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadAllResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/download-selected:
+    post:
+      tags: [OrganizerMedia]
+      summary: Trigger async ZIP job for selected media downloads
+      operationId: organizerDownloadSelected
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadSelectedRequest'
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadAllResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/jobs/{job_id}:
+    get:
+      tags: [OrganizerJobs]
+      summary: Poll async job status
+      operationId: organizerGetJobStatus
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/guests:
+    get:
+      tags: [OrganizerGuests]
+      summary: List event guest sessions
+      operationId: organizerGetGuests
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Guest session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuestsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/guests/{sid}/deactivate:
+    post:
+      tags: [OrganizerGuests]
+      summary: Deactivate guest session
+      operationId: organizerDeactivateGuest
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeactivateGuestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/organizer/events/{id}/capacity:
+    post:
+      tags: [OrganizerEvents]
+      summary: Update event capacity and pricing-sensitive settings
+      operationId: organizerUpdateCapacity
+      security:
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CapacityUpdateRequest'
+      responses:
+        '200':
+          description: Capacity updated or payment redirect required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EventMutationSuccessResponse'
+                  - $ref: '#/components/schemas/PaymentRedirectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/webhooks/payment:
+    post:
+      tags: [Webhooks]
+      summary: Payment provider webhook callback
+      operationId: paymentWebhook
+      security:
+        - WebhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebhookRequest'
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received]
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    GuestSessionCookie:
+      type: apiKey
+      in: cookie
+      name: device_session_token
+    OrganizerBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    WebhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+
+  parameters:
+    EventId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MediaId:
+      name: mid
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: sid
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Sort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [newest, oldest]
+        default: newest
+    FilterDate:
+      name: filter_date
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+    FilterSession:
+      name: filter_session
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+    FilterUploader:
+      name: filter_uploader
+      in: query
+      required: false
+      schema:
+        type: string
+    FilterTag:
+      name: filter_tag
+      in: query
+      required: false
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated but not permitted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: UPLOAD_LIMIT_REACHED
+            message:
+              type: string
+              example: You have reached your upload limit.
+            request_id:
+              type: string
+              nullable: true
+              example: req_12345
+            details:
+              type: object
+              additionalProperties: true
+
+    CompressionMode:
+      type: string
+      enum: [compressed, raw]
+
+    EventStatus:
+      type: string
+      enum: [draft, active, closed, archived, purged]
+
+    CurrencyCode:
+      type: string
+      minLength: 3
+      maxLength: 3
+      example: INR
+
+    GuestSession:
+      type: object
+      required:
+        - session_id
+        - event_id
+        - is_active
+        - created_at
+        - last_active_at
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 64
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+
+    GuestEventMeta:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - status
+        - max_uploads_per_guest
+        - max_guests
+        - compression_mode
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/EventStatus'
+        max_uploads_per_guest:
+          type: integer
+        max_guests:
+          type: integer
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+        expires_at:
+          type: string
+          format: date-time
+
+    JoinRequest:
+      type: object
+      required: [event_slug]
+      properties:
+        event_slug:
+          type: string
+        pin:
+          type: string
+          pattern: '^\\d{4}$'
+          nullable: true
+        display_name:
+          type: string
+          maxLength: 64
+          nullable: true
+
+    JoinResponse:
+      type: object
+      required: [session, event, upload_count, max_uploads]
+      properties:
+        session:
+          $ref: '#/components/schemas/GuestSession'
+        event:
+          $ref: '#/components/schemas/GuestEventMeta'
+        upload_count:
+          type: integer
+          minimum: 0
+        max_uploads:
+          type: integer
+          minimum: 1
+
+    MySessionResponse:
+      type: object
+      required: [session, event, upload_count, max_uploads]
+      properties:
+        session:
+          $ref: '#/components/schemas/GuestSession'
+        event:
+          $ref: '#/components/schemas/GuestEventMeta'
+        upload_count:
+          type: integer
+          minimum: 0
+        max_uploads:
+          type: integer
+          minimum: 1
+
+    PatchMySessionRequest:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          nullable: true
+          maxLength: 64
+
+    CreateUploadRequest:
+      type: object
+      required: [file_type, file_size]
+      properties:
+        file_type:
+          type: string
+          description: MIME type declared by client
+          example: image/jpeg
+        file_size:
+          type: integer
+          minimum: 1
+          description: File size in bytes declared by client
+        tags:
+          type: array
+          description: Optional per-file labels provided by guest
+          items:
+            type: string
+            maxLength: 32
+          maxItems: 8
+
+    CreateUploadResponse:
+      type: object
+      required:
+        - media_id
+        - upload_url
+        - remaining_uploads
+        - compression_mode
+        - max_file_size
+      properties:
+        media_id:
+          type: string
+          format: uuid
+        upload_url:
+          type: string
+          format: uri
+        thumb_upload_url:
+          type: string
+          format: uri
+          nullable: true
+        remaining_uploads:
+          type: integer
+          minimum: 0
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+        max_file_size:
+          type: integer
+          minimum: 1
+          description: Max allowed size in bytes for the reserved upload mode
+
+    CompleteUploadRequest:
+      type: object
+      required: [media_id]
+      properties:
+        media_id:
+          type: string
+          format: uuid
+
+    CompleteUploadResponse:
+      type: object
+      required: [success, media_id, status]
+      properties:
+        success:
+          type: boolean
+          example: true
+        media_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [uploaded]
+
+    MyUploadItem:
+      type: object
+      required: [media_id, thumb_url, status, uploaded_at]
+      properties:
+        media_id:
+          type: string
+          format: uuid
+        thumb_url:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [uploaded, pending, failed, expired, hidden]
+        uploaded_at:
+          type: string
+          format: date-time
+          nullable: true
+        uploader_name:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+
+    MyUploadsResponse:
+      type: object
+      required: [uploads, total_uploaded, max_uploads]
+      properties:
+        uploads:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyUploadItem'
+        total_uploaded:
+          type: integer
+          minimum: 0
+        max_uploads:
+          type: integer
+          minimum: 1
+
+    CreateEventRequest:
+      type: object
+      required:
+        - name
+        - event_date
+        - max_guests
+        - max_uploads_per_guest
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        event_date:
+          type: string
+          format: date
+        starts_at:
+          type: string
+          format: date-time
+          nullable: true
+        max_guests:
+          type: integer
+          minimum: 1
+        max_uploads_per_guest:
+          type: integer
+          minimum: 1
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+        pin:
+          type: string
+          pattern: '^\\d{4}$'
+          nullable: true
+        cover_image_path:
+          type: string
+          nullable: true
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+    EventSummary:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - status
+        - max_guests
+        - max_uploads_per_guest
+        - compression_mode
+        - total_fee
+        - currency
+        - event_date
+        - starts_at
+        - expires_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/EventStatus'
+        max_guests:
+          type: integer
+        max_uploads_per_guest:
+          type: integer
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+        total_fee:
+          type: integer
+          description: Fee in minor units
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        event_date:
+          type: string
+          format: date
+        starts_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        guest_url:
+          type: string
+          format: uri
+        total_uploads:
+          type: integer
+          minimum: 0
+        guest_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+
+    EventStats:
+      type: object
+      properties:
+        total_uploads:
+          type: integer
+          minimum: 0
+        total_storage_bytes:
+          type: integer
+          minimum: 0
+        unique_guest_count:
+          type: integer
+          minimum: 0
+
+    EventDetail:
+      allOf:
+        - $ref: '#/components/schemas/EventSummary'
+        - type: object
+          properties:
+            pin_enabled:
+              type: boolean
+            cover_image_path:
+              type: string
+              nullable: true
+            stats:
+              $ref: '#/components/schemas/EventStats'
+
+    CreateEventSuccessResponse:
+      type: object
+      required: [event]
+      properties:
+        event:
+          $ref: '#/components/schemas/EventDetail'
+
+    PaymentRedirectResponse:
+      type: object
+      required: [requires_payment, payment_url, fee_difference, currency]
+      properties:
+        requires_payment:
+          type: boolean
+          enum: [true]
+        payment_url:
+          type: string
+          format: uri
+        payment_reference:
+          type: string
+        fee_difference:
+          type: integer
+          description: Fee delta in minor units
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+
+    PatchEventRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        pin:
+          type: string
+          pattern: '^\\d{4}$'
+          nullable: true
+        max_guests:
+          type: integer
+          minimum: 1
+        max_uploads_per_guest:
+          type: integer
+          minimum: 1
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+
+    EventMutationSuccessResponse:
+      type: object
+      required: [success, event]
+      properties:
+        success:
+          type: boolean
+          example: true
+        event:
+          $ref: '#/components/schemas/EventDetail'
+
+    GalleryItem:
+      type: object
+      required:
+        - media_id
+        - thumb_url
+        - uploaded_at
+        - status
+        - size_bytes
+        - mime_type
+      properties:
+        media_id:
+          type: string
+          format: uuid
+        thumb_url:
+          type: string
+          format: uri
+        uploaded_by:
+          type: string
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [uploaded, hidden, pending, failed, expired]
+        size_bytes:
+          type: integer
+          minimum: 0
+        mime_type:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    GalleryResponse:
+      type: object
+      required: [media, total_count]
+      properties:
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/GalleryItem'
+        next_cursor:
+          type: string
+          nullable: true
+        total_count:
+          type: integer
+          minimum: 0
+
+    UploadsPerDayItem:
+      type: object
+      required: [date, count]
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+          minimum: 0
+
+    GalleryStatsResponse:
+      type: object
+      required: [total_uploaded, total_storage_bytes, uploads_per_day, unique_guest_count]
+      properties:
+        total_uploaded:
+          type: integer
+          minimum: 0
+        total_storage_bytes:
+          type: integer
+          minimum: 0
+        uploads_per_day:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadsPerDayItem'
+        unique_guest_count:
+          type: integer
+          minimum: 0
+
+    MediaMutationResponse:
+      type: object
+      required: [success, media_id, status]
+      properties:
+        success:
+          type: boolean
+          example: true
+        media_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [uploaded, hidden]
+
+    BulkHideRequest:
+      type: object
+      required: [media_ids]
+      properties:
+        media_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    BulkHideResponse:
+      type: object
+      required: [success, hidden_count]
+      properties:
+        success:
+          type: boolean
+          example: true
+        hidden_count:
+          type: integer
+          minimum: 0
+
+    DownloadUrlResponse:
+      type: object
+      required: [download_url, expires_at]
+      properties:
+        download_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    DownloadAllRequest:
+      type: object
+      properties:
+        exclude_hidden:
+          type: boolean
+          default: true
+
+    DownloadSelectedRequest:
+      type: object
+      required: [media_ids]
+      properties:
+        media_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 500
+          description: List of media IDs to include in the download
+
+    DownloadAllResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing]
+        estimated_time_seconds:
+          type: integer
+          minimum: 0
+
+    JobStatusResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, complete, failed]
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+        download_urls:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uri
+        file_size_bytes:
+          type: integer
+          minimum: 0
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+
+    GuestListItem:
+      type: object
+      required:
+        - session_id
+        - upload_count
+        - is_active
+        - created_at
+        - last_active_at
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          nullable: true
+        upload_count:
+          type: integer
+          minimum: 0
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+
+    GuestsResponse:
+      type: object
+      required: [guests, total_guests, max_guests]
+      properties:
+        guests:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestListItem'
+        total_guests:
+          type: integer
+          minimum: 0
+        max_guests:
+          type: integer
+          minimum: 1
+
+    DeactivateGuestResponse:
+      type: object
+      required: [success, session_id, is_active]
+      properties:
+        success:
+          type: boolean
+          example: true
+        session_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+          enum: [false]
+
+    CapacityUpdateRequest:
+      type: object
+      required: [max_guests, max_uploads_per_guest]
+      properties:
+        max_guests:
+          type: integer
+          minimum: 1
+        max_uploads_per_guest:
+          type: integer
+          minimum: 1
+        compression_mode:
+          $ref: '#/components/schemas/CompressionMode'
+
+    PaymentWebhookRequest:
+      type: object
+      required: [provider_event_id, event_type, status]
+      properties:
+        provider_event_id:
+          type: string
+        event_type:
+          type: string
+          example: payment.captured
+        status:
+          type: string
+          example: succeeded
+        payment_reference:
+          type: string
+        event_id:
+          type: string
+          format: uuid
+          nullable: true
+        amount:
+          type: integer
+          nullable: true
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        metadata:
+          type: object
+          additionalProperties: true

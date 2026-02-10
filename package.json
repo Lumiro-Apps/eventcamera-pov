@@ -1,0 +1,23 @@
+{
+  "name": "eventcamera-pov",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "ci:check": "npm run check:openapi && npm run check:workspaces",
+    "check:openapi": "ruby -e \"require 'yaml'; YAML.load_file('openapi/poveventcam.yaml'); puts 'OpenAPI YAML OK'\"",
+    "check:workspaces": "npm run --workspaces --if-present typecheck",
+    "db:setup": "npm run db:setup --workspace @poveventcam/api",
+    "db:check": "npm run db:check --workspace @poveventcam/api",
+    "dev:api": "npm run dev --workspace @poveventcam/api",
+    "dev:web-guest": "npm run dev --workspace @poveventcam/web-guest",
+    "dev:web-organizer": "npm run dev --workspace @poveventcam/web-organizer",
+    "dev:mobile-organizer": "npm run dev --workspace @poveventcam/mobile-organizer"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

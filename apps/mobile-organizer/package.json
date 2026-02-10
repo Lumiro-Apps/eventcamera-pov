@@ -1,0 +1,10 @@
+{
+  "name": "@poveventcam/mobile-organizer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Organizer mobile app scaffolded. Add Expo setup next.'",
+    "build": "echo 'Organizer mobile build not configured yet.'",
+    "typecheck": "echo 'Organizer mobile typecheck not configured yet.'"
+  }
+}
