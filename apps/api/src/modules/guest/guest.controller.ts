@@ -33,6 +33,11 @@ function asyncHandler(
   };
 }
 
+export const guestLookupEvent = asyncHandler(async (req, res) => {
+  const payload = await guestService.lookupEvent(req.body);
+  res.status(200).json(payload);
+});
+
 export const guestJoinEvent = asyncHandler(async (req, res) => {
   const payload = await guestService.joinEvent(req.body);
   setDeviceSessionCookie(res, payload.device_session_token);

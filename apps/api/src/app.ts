@@ -6,6 +6,7 @@ import { errorHandlerMiddleware } from './middleware/error-handler';
 import { notFoundMiddleware } from './middleware/not-found';
 import { requestIdMiddleware } from './middleware/request-id';
 import { guestRouter } from './modules/guest/guest.routes';
+import { internalRouter } from './modules/internal/internal.routes';
 import { organizerRouter } from './modules/organizer/organizer.routes';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes';
 
@@ -28,6 +29,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', guestRouter);
 app.use('/api/organizer', organizerRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/internal', internalRouter);
 
 app.use(notFoundMiddleware);
 app.use(errorHandlerMiddleware);

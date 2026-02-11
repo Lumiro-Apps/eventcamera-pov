@@ -48,6 +48,8 @@ export interface GuestEventMeta {
   max_uploads_per_guest: number;
   max_guests: number;
   compression_mode: 'compressed' | 'raw';
+  event_date: string;
+  end_date: string;
   expires_at: string;
 }
 
@@ -56,6 +58,21 @@ export interface GuestSessionPayload {
   event: GuestEventMeta;
   upload_count: number;
   max_uploads: number;
+}
+
+interface LookupEventRequest {
+  event_slug: string;
+}
+
+export interface EventLookupResponse {
+  id: string;
+  slug: string;
+  name: string;
+  status: 'draft' | 'active' | 'closed' | 'archived' | 'purged';
+  requires_pin: boolean;
+  end_date: string;
+  expires_at: string;
+  event_date: string;
 }
 
 interface JoinRequest {
@@ -149,6 +166,13 @@ async function request<T>(
 }
 
 export const guestApi = {
+  lookupEvent(input: LookupEventRequest): Promise<EventLookupResponse> {
+    return request('/api/lookup-event', {
+      method: 'POST',
+      body: input
+    });
+  },
+
   joinEvent(input: JoinRequest): Promise<GuestSessionPayload> {
     return request('/api/join', {
       method: 'POST',

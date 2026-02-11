@@ -1,6 +1,15 @@
 const DEFAULT_PORT = 3000;
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 15 * 60;
 
+function parseBoolean(input: string | undefined, fallback: boolean): boolean {
+  if (!input) return fallback;
+
+  const normalized = input.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
 function parsePort(input: string | undefined): number {
   if (!input) return DEFAULT_PORT;
 
@@ -46,6 +55,8 @@ function requireFirstEnv(names: string[]): string {
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parsePort(process.env.PORT),
+  enableCronJobs: parseBoolean(process.env.ENABLE_CRON_JOBS, true),
+  internalCronApiToken: process.env.INTERNAL_CRON_API_TOKEN ?? null,
   supabaseUrl: requireEnv('SUPABASE_URL'),
   supabasePublishableKey: requireFirstEnv([
     'SUPABASE_PUBLISHABLE_KEY',

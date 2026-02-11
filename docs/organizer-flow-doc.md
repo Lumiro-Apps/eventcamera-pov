@@ -61,7 +61,7 @@ For MVP, each event has a single owner. The `event_organizers` table is included
 
 **New organizer:**
 
-1. Opens the organizer app (e.g., `poveventcam.app`).
+1. Opens the organizer app (e.g., `eventpovcamera.app`).
 2. Signs up with email + password or Google OAuth.
 3. Supabase Auth creates the auth user.
 4. A trigger or post-signup hook creates the corresponding `organizers` row.
@@ -125,17 +125,21 @@ Example: 200 guests, 20 images/guest, compressed = ₹400
 5. If fee = 0 (within free tier, compressed):
    - Creates event immediately
 6. If a PIN is provided, hashes it before storing.
-7. Sets `starts_at` and `expires_at` (event date + 7 days grace period).
-8. Creates the event row with `total_fee` and `currency`.
-9. Creates an `event_organizers` row with `role = 'owner'`.
-10. Returns the event details including the guest URL: `https://guest.poveventcam.app/e/{slug}`.
+7. Sets `event_date` (start date) and `end_date` (defaults to same day unless specified).
+8. Status is derived with a UTC buffer:
+   - opens 13 hours before `event_date` starts
+   - closes 13 hours after `end_date` ends
+9. A cron running every 12 hours at `00:00 UTC` and `12:00 UTC` reconciles event statuses (`draft/active/closed`).
+10. Creates the event row with `total_fee` and `currency`.
+11. Creates an `event_organizers` row with `role = 'owner'`.
+12. Returns the event details including the guest URL: `https://guest.eventpovcamera.app/e/{slug}`.
 
 ### Step 4: QR Code Generation
 
 The organizer app generates a QR code client-side from the guest URL:
 
 ```
-https://guest.poveventcam.app/e/{slug}
+https://guest.eventpovcamera.app/e/{slug}
 ```
 
 Using a library like `qrcode.react` or `qrcode-generator`. No QR image is stored server-side.
@@ -157,7 +161,7 @@ PATCH /api/organizer/events/:id
 Body: { name?, pin?, max_guests?, max_uploads_per_guest?, compression_mode? }
 ```
 
-**Before event starts (`now() < starts_at`):**
+**Before event opens (`now() < event_date@00:00Z - 13h`):**
 - All fields are editable
 - Changing guests, images/guest, or compression mode recalculates the fee
 - If new fee > paid fee → initiate payment for difference
@@ -169,7 +173,7 @@ Body: { name?, pin?, max_guests?, max_uploads_per_guest?, compression_mode? }
 
 ```javascript
 // In PATCH handler
-const isLocked = event.starts_at <= new Date();
+const isLocked = Date.now() >= (Date.parse(`${event.event_date}T00:00:00Z`) - 13 * 60 * 60 * 1000);
 
 if (isLocked && (body.max_guests || body.max_uploads_per_guest || body.compression_mode)) {
   return res.status(403).json({ 
@@ -453,7 +457,7 @@ await fetch('https://api.resend.com/emails', {
   method: 'POST',
   headers: { 'Authorization': `Bearer ${RESEND_API_KEY}` },
   body: JSON.stringify({
-    from: 'POV EventCamera <noreply@poveventcam.app>',
+    from: 'POV EventCamera <noreply@eventpovcamera.app>',
     to: organizer.email,
     subject: 'Your event photos will be deleted soon',
     html: emailTemplate,

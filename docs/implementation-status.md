@@ -1,6 +1,6 @@
 # POV EventCamera Implementation Status
 
-Last updated: 2026-02-10
+Last updated: 2026-02-11
 
 This document tracks what has been implemented vs what is still pending.
 
@@ -52,6 +52,7 @@ This document tracks what has been implemented vs what is still pending.
 - [x] Guest controller moved from stubs to async handlers (`apps/api/src/modules/guest/guest.controller.ts`)
 - [x] Guest service implemented with DB + storage operations (`apps/api/src/modules/guest/guest.service.ts`)
 - [x] Endpoints implemented:
+  - [x] `POST /api/lookup-event` (NEW - returns event info without registering)
   - [x] `POST /api/join`
   - [x] `GET /api/my-session`
   - [x] `PATCH /api/my-session`
@@ -101,14 +102,21 @@ This document tracks what has been implemented vs what is still pending.
 
 ### Guest web app (MVP)
 - [x] Next.js guest app scaffold (`apps/web-guest`)
-- [x] **UI modernization with shadcn/ui + Tailwind CSS v4** (NEW)
+- [x] **UI modernization with shadcn/ui + Tailwind CSS v4**
   - [x] Clean & minimal design
   - [x] Responsive mobile-first layout
   - [x] shadcn/ui components: Button, Card, Input, Badge, Alert
 - [x] Mobile-first guest UI flow
-- [x] Auto-join behavior from event link (`/e/:slug`) with cookie-backed session
-- [x] PIN fallback handling when event requires PIN
-- [x] Name tag update flow (stored as guest display name)
+- [x] **Landing page with event details** (NEW)
+  - [x] Shows event name and date before joining
+  - [x] Name input required during registration
+  - [x] PIN input only shown if event requires PIN
+  - [x] Explicit "Join Event" button (no auto-registration)
+- [x] Cookie-backed session after joining
+- [x] **Name tag display with edit mode** (NEW)
+  - [x] Shows name as text with Edit button
+  - [x] Click Edit to switch to input mode
+  - [x] Save/Cancel buttons in edit mode
 - [x] Per-file tags entry in upload queue
 - [x] Direct upload flow wired: `create-upload` -> storage PUT -> `complete-upload`
 - [x] My uploads gallery with thumbnail preview, uploader name, and tags
@@ -182,7 +190,22 @@ This document tracks what has been implemented vs what is still pending.
 - [ ] Metrics and alerting for API errors and job failures
 - [ ] Environment-specific deployment runbooks
 
-## Recent Changes (2026-02-10)
+## Recent Changes (2026-02-11)
+
+### Guest Landing Page Redesign
+- **Event lookup endpoint**: New `POST /api/lookup-event` returns event details (name, date, requires_pin) without registering the guest
+- **Landing page**: Shows event name and date prominently before joining
+- **Registration flow**: Name is collected during registration (required field), PIN only shown if event requires it
+- **Explicit join**: Guests must click "Join Event" button - no auto-registration
+- **Name tag UX**: After joining, name shows as text with Edit button; click to enter edit mode with Save/Cancel
+
+### API Updates
+- New endpoint: `POST /api/lookup-event` for fetching event info without registering
+- Returns: `{ id, slug, name, status, requires_pin, expires_at, event_date }`
+
+---
+
+## Changes (2026-02-10)
 
 ### UI Modernization
 - Migrated both web apps to **Tailwind CSS v4** with CSS-based theme configuration

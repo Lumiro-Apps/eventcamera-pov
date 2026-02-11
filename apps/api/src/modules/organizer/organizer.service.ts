@@ -14,7 +14,7 @@ type JobStatus = 'queued' | 'processing' | 'complete' | 'failed';
 interface CreateEventInput {
   name: string;
   event_date: string;
-  starts_at?: string | null;
+  end_date?: string;
   max_guests: number;
   max_uploads_per_guest: number;
   compression_mode?: CompressionMode;
@@ -58,8 +58,7 @@ interface DbEventRow {
   total_fee: number;
   currency: string;
   event_date: Date | string;
-  starts_at: Date | string | null;
-  expires_at: Date | string;
+  end_date: Date | string;
   pin_hash: string | null;
   cover_image_path: string | null;
   created_at: Date | string;
@@ -112,7 +111,8 @@ interface PaymentRedirectResponse {
 
 const DEFAULT_CURRENCY = 'INR';
 const DEFAULT_COMPRESSION_MODE: CompressionMode = 'compressed';
-const EVENT_EXPIRY_GRACE_DAYS = 7;
+const OPEN_EARLY_BUFFER_HOURS = 13;
+const CLOSE_LATE_BUFFER_HOURS = 13;
 const ZIP_SPLIT_FILE_COUNT = 1_000;
 const ZIP_SPLIT_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 const UUID_PATTERN =
@@ -156,27 +156,6 @@ function ensureDateString(value: unknown, fieldName: string): string {
   }
 
   return text;
-}
-
-function ensureOptionalDateTimeString(value: unknown, fieldName: string): string | null {
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    throw new AppError(400, 'VALIDATION_ERROR', `${fieldName} must be a valid ISO date-time`, {
-      field: fieldName
-    });
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new AppError(400, 'VALIDATION_ERROR', `${fieldName} must be a valid ISO date-time`, {
-      field: fieldName
-    });
-  }
-
-  return parsed.toISOString();
 }
 
 function ensureOptionalShortString(
@@ -279,19 +258,32 @@ function toNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
-function plusDays(dateString: string, days: number): string {
-  const anchor = new Date(`${dateString}T23:59:59.000Z`);
-  anchor.setUTCDate(anchor.getUTCDate() + days);
-  return anchor.toISOString();
+function eventOpenAtMs(eventDate: string): number {
+  return Date.parse(`${eventDate}T00:00:00.000Z`) - OPEN_EARLY_BUFFER_HOURS * 60 * 60 * 1000;
+}
+
+function eventCloseAtMs(endDate: string): number {
+  return Date.parse(`${endDate}T23:59:59.999Z`) + CLOSE_LATE_BUFFER_HOURS * 60 * 60 * 1000;
+}
+
+function toEventCloseIso(endDate: string): string {
+  return new Date(eventCloseAtMs(endDate)).toISOString();
+}
+
+function resolveEventStatus(eventDate: string, endDate: string): EventStatus {
+  const now = Date.now();
+  if (now < eventOpenAtMs(eventDate)) return 'draft';
+  if (now > eventCloseAtMs(endDate)) return 'closed';
+  return 'active';
 }
 
 function buildGuestUrl(slug: string): string {
-  return `https://guest.poveventcam.app/e/${slug}`;
+  return `https://guest.eventpovcamera.app/e/${slug}`;
 }
 
 function buildArchiveDownloadUrl(eventId: string, jobId: string, part?: number): string {
   const partPath = part ? `part-${part}.zip` : 'all.zip';
-  return `https://downloads.poveventcam.app/events/${eventId}/archives/${jobId}/${partPath}?token=${randomUUID()}`;
+  return `https://downloads.eventpovcamera.app/events/${eventId}/archives/${jobId}/${partPath}?token=${randomUUID()}`;
 }
 
 function parseCursor(value: string | undefined): number {
@@ -344,8 +336,7 @@ async function queryOwnedEventBase(
         e.total_fee,
         e.currency,
         e.event_date,
-        e.starts_at,
-        e.expires_at,
+        e.end_date,
         e.pin_hash,
         e.cover_image_path,
         e.created_at
@@ -383,8 +374,7 @@ async function queryOwnedEventDetail(
         e.total_fee,
         e.currency,
         e.event_date,
-        e.starts_at,
-        e.expires_at,
+        e.end_date,
         e.pin_hash,
         e.cover_image_path,
         e.created_at,
@@ -425,9 +415,8 @@ async function queryOwnedEventDetail(
 }
 
 function eventSettingsLocked(event: DbEventRow): boolean {
-  const startsAt = toIsoDateTime(event.starts_at);
-  if (!startsAt) return false;
-  return new Date(startsAt).getTime() <= Date.now();
+  const eventDate = toIsoDate(event.event_date);
+  return Date.now() >= eventOpenAtMs(eventDate);
 }
 
 async function generateUniqueSlug(name: string, client: PoolClient): Promise<string> {
@@ -437,7 +426,7 @@ async function generateUniqueSlug(name: string, client: PoolClient): Promise<str
   let counter = 1;
 
   // Keep probing until a free slug is found.
-  for (;;) {
+  for (; ;) {
     const existsResult = await client.query<{ id: string }>(
       'SELECT id FROM events WHERE slug = $1 LIMIT 1',
       [candidate]
@@ -464,8 +453,7 @@ function toEventSummary(event: DbEventRow) {
     total_fee: toNumber(event.total_fee),
     currency: event.currency,
     event_date: toIsoDate(event.event_date),
-    starts_at: toIsoDateTime(event.starts_at),
-    expires_at: toIsoDateTime(event.expires_at) ?? new Date().toISOString(),
+    end_date: toIsoDate(event.end_date),
     guest_url: buildGuestUrl(event.slug),
     total_uploads: toNumber(event.total_uploads),
     guest_count: toNumber(event.guest_count),
@@ -492,7 +480,13 @@ class OrganizerService {
 
     const name = ensureNonEmptyString(input.name, 'name');
     const eventDate = ensureDateString(input.event_date, 'event_date');
-    const startsAt = ensureOptionalDateTimeString(input.starts_at, 'starts_at') ?? new Date().toISOString();
+    const endDate =
+      input.end_date !== undefined ? ensureDateString(input.end_date, 'end_date') : eventDate;
+    if (endDate < eventDate) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'end_date must be on or after event_date', {
+        field: 'end_date'
+      });
+    }
     const maxGuests = ensurePositiveInteger(input.max_guests, 'max_guests');
     const maxUploadsPerGuest = ensurePositiveInteger(
       input.max_uploads_per_guest,
@@ -517,8 +511,8 @@ class OrganizerService {
 
     const created = await withTransaction(async (client) => {
       const slug = await generateUniqueSlug(name, client);
-      const expiresAt = plusDays(eventDate, EVENT_EXPIRY_GRACE_DAYS);
-      const status: EventStatus = new Date(startsAt).getTime() > Date.now() ? 'draft' : 'active';
+      const status = resolveEventStatus(eventDate, endDate);
+      const expiresAt = toEventCloseIso(endDate);
 
       const eventInsert = await client.query<DbEventRow>(
         `
@@ -532,7 +526,7 @@ class OrganizerService {
             total_fee,
             currency,
             event_date,
-            starts_at,
+            end_date,
             expires_at,
             pin_hash,
             cover_image_path
@@ -547,7 +541,7 @@ class OrganizerService {
             $7,
             $8,
             $9::date,
-            $10::timestamptz,
+            $10::date,
             $11::timestamptz,
             $12,
             $13
@@ -563,8 +557,7 @@ class OrganizerService {
             total_fee,
             currency,
             event_date,
-            starts_at,
-            expires_at,
+            end_date,
             pin_hash,
             cover_image_path,
             created_at
@@ -579,7 +572,7 @@ class OrganizerService {
           totalFee,
           currency,
           eventDate,
-          startsAt,
+          endDate,
           expiresAt,
           input.pin ? hashPin(input.pin) : null,
           input.cover_image_path ?? null
@@ -623,8 +616,7 @@ class OrganizerService {
           e.total_fee,
           e.currency,
           e.event_date,
-          e.starts_at,
-          e.expires_at,
+          e.end_date,
           e.pin_hash,
           e.cover_image_path,
           e.created_at,
@@ -860,7 +852,7 @@ class OrganizerService {
 
         const thumbUrl = thumbPath
           ? await createSignedStorageObjectUrl(bucket, thumbPath)
-          : `https://guest.poveventcam.app/e/${eventId}/missing-thumb`;
+          : `https://guest.eventpovcamera.app/e/${eventId}/missing-thumb`;
 
         return {
           media_id: item.media_id,
@@ -1347,7 +1339,7 @@ class OrganizerService {
 
     return {
       requires_payment: true,
-      payment_url: `https://payments.poveventcam.app/pay/${paymentReference}`,
+      payment_url: `https://payments.eventpovcamera.app/pay/${paymentReference}`,
       payment_reference: paymentReference,
       fee_difference: feeDifference,
       currency

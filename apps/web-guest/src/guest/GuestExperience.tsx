@@ -1,11 +1,12 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Camera, Upload, User, RefreshCw, X, ImageIcon } from 'lucide-react';
+import { Calendar, Camera, Upload, User, RefreshCw, X, ImageIcon, Pencil } from 'lucide-react';
 
 import {
   guestApi,
   GuestApiError,
+  type EventLookupResponse,
   type GuestSessionPayload,
   type MyUploadItem
 } from '../lib/guest-api';
@@ -123,16 +124,27 @@ function getStatusVariant(status: DraftStatus): 'default' | 'secondary' | 'succe
   }
 }
 
+function formatEventDate(dateString: string): string {
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
 export function GuestExperience({ slug }: GuestExperienceProps) {
+  const [eventInfo, setEventInfo] = useState<EventLookupResponse | null>(null);
   const [sessionPayload, setSessionPayload] = useState<GuestSessionPayload | null>(null);
   const [uploads, setUploads] = useState<MyUploadItem[]>([]);
   const [drafts, setDrafts] = useState<UploadDraft[]>([]);
   const [nameTag, setNameTag] = useState('');
   const [pin, setPin] = useState('');
-  const [requiresPin, setRequiresPin] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [isSavingName, setIsSavingName] = useState(false);
-  const [isJoiningWithPin, setIsJoiningWithPin] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [isUploadingAll, setIsUploadingAll] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -162,9 +174,9 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
     setIsBooting(true);
     setError(null);
     setMessage(null);
-    setRequiresPin(false);
 
     try {
+      // First, try to get existing session for this event
       try {
         const existing = await guestApi.getMySession();
         if (existing.event.slug === slug) {
@@ -174,6 +186,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
           return;
         }
       } catch (sessionError) {
+        // No existing session - that's fine, we'll show the landing page
         if (
           !(sessionError instanceof GuestApiError) ||
           (sessionError.statusCode !== 401 && sessionError.statusCode !== 403)
@@ -182,18 +195,11 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
         }
       }
 
-      const joined = await guestApi.joinEvent({ event_slug: slug });
-      setSessionPayload(joined);
-      setNameTag(joined.session.display_name ?? '');
-      setMessage('You are checked in. Start uploading your photos.');
-      await refreshUploads();
+      // No session found - lookup event details to show landing page
+      const lookup = await guestApi.lookupEvent({ event_slug: slug });
+      setEventInfo(lookup);
     } catch (nextError) {
-      if (nextError instanceof GuestApiError && nextError.code === 'INVALID_PIN') {
-        setRequiresPin(true);
-        setError('This event requires a 4-digit PIN to join.');
-      } else {
-        setError(formatApiError(nextError));
-      }
+      setError(formatApiError(nextError));
     } finally {
       setIsBooting(false);
     }
@@ -278,19 +284,19 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
     }
   }
 
-  async function handleJoinWithPin(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleJoinEvent(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    setIsJoiningWithPin(true);
+    setIsJoining(true);
     setError(null);
     setMessage(null);
 
     try {
       const joined = await guestApi.joinEvent({
         event_slug: slug,
-        pin: pin.trim(),
+        pin: eventInfo?.requires_pin ? pin.trim() : null,
         display_name: nameTag.trim() || null
       });
-      setRequiresPin(false);
+      setEventInfo(null);
       setSessionPayload(joined);
       setNameTag(joined.session.display_name ?? '');
       setMessage('Joined successfully. You can start uploading now.');
@@ -298,7 +304,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
     } catch (nextError) {
       setError(formatApiError(nextError));
     } finally {
-      setIsJoiningWithPin(false);
+      setIsJoining(false);
     }
   }
 
@@ -313,12 +319,18 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
       const updated = await guestApi.patchMySession(nameTag.trim() || null);
       setSessionPayload(updated);
       setNameTag(updated.session.display_name ?? '');
+      setIsEditingName(false);
       setMessage('Name tag saved. It will be attached to new uploads.');
     } catch (nextError) {
       setError(formatApiError(nextError));
     } finally {
       setIsSavingName(false);
     }
+  }
+
+  function handleCancelEditName(): void {
+    setNameTag(sessionPayload?.session.display_name ?? '');
+    setIsEditingName(false);
   }
 
   function handleSelectFiles(event: ChangeEvent<HTMLInputElement>): void {
@@ -358,11 +370,109 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
             <CardContent className="flex min-h-[200px] flex-col items-center justify-center gap-4 p-8">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               <div className="text-center">
-                <h1 className="text-xl font-semibold">Joining event...</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Checking your guest session</p>
+                <h1 className="text-xl font-semibold">Loading event...</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Please wait</p>
               </div>
             </CardContent>
           </Card>
+        </div>
+      </main>
+    );
+  }
+
+  // Error state - event not found or other error
+  if (!eventInfo && !sessionPayload && error) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+        <div className="mx-auto max-w-md space-y-4">
+          <Card className="mt-8">
+            <CardContent className="flex min-h-[200px] flex-col items-center justify-center gap-4 p-8">
+              <Camera className="h-12 w-12 text-muted-foreground/50" />
+              <div className="text-center">
+                <h1 className="text-xl font-semibold">Event Not Available</h1>
+                <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
+  // Landing page - show event info and join form when not yet registered
+  if (eventInfo && !sessionPayload) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+        <div className="mx-auto max-w-md space-y-4">
+          {/* Event Info Card */}
+          <Card className="border-0 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
+            <CardHeader className="text-center pb-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                POV EventCamera
+              </p>
+              <CardTitle className="text-2xl mt-2">
+                {eventInfo.name}
+              </CardTitle>
+              <CardDescription className="flex items-center justify-center gap-2 mt-2">
+                <Calendar className="h-4 w-4" />
+                {formatEventDate(eventInfo.event_date)}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Join Event Form */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Join Event</CardTitle>
+              <CardDescription>
+                Enter your name to start uploading photos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={(e) => void handleJoinEvent(e)} className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="name-input" className="text-sm font-medium">
+                    Your Name
+                  </label>
+                  <Input
+                    id="name-input"
+                    value={nameTag}
+                    onChange={(e) => setNameTag(e.target.value)}
+                    maxLength={64}
+                    placeholder="e.g. Priya, Family Table 3"
+                    required
+                  />
+                </div>
+                {eventInfo.requires_pin && (
+                  <div className="space-y-2">
+                    <label htmlFor="pin-input" className="text-sm font-medium">
+                      Event PIN
+                    </label>
+                    <Input
+                      id="pin-input"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="4-digit PIN"
+                      className="text-center text-lg tracking-widest"
+                      required
+                    />
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={isJoining}>
+                  {isJoining ? 'Joining...' : 'Join Event'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Error Alert */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
         </div>
       </main>
     );
@@ -378,7 +488,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
               POV EventCamera
             </p>
             <CardTitle className="text-2xl">
-              {sessionPayload?.event.name ?? 'Guest Upload'}
+              {sessionPayload?.event.name ?? 'Event'}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -393,64 +503,59 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
           </CardContent>
         </Card>
 
-        {/* PIN Entry */}
-        {requiresPin && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Enter Event PIN</CardTitle>
-              <CardDescription>
-                This event requires a PIN to join
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={(event) => void handleJoinWithPin(event)} className="space-y-4">
-                <Input
-                  value={pin}
-                  onChange={(event) => setPin(event.target.value)}
-                  inputMode="numeric"
-                  maxLength={4}
-                  placeholder="4-digit PIN"
-                  className="text-center text-lg tracking-widest"
-                  required
-                />
-                <Button type="submit" className="w-full" disabled={isJoiningWithPin}>
-                  {isJoiningWithPin ? 'Joining...' : 'Join Event'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-
         {sessionPayload && (
           <>
             {/* Name Tag */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <User className="h-4 w-4" />
-                  Your Name Tag
-                </CardTitle>
-                <CardDescription>
-                  Let the organizer know who uploaded the photographs
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <User className="h-4 w-4" />
+                    Your Name Tag
+                  </CardTitle>
+                  {!isEditingName && sessionPayload.session.display_name && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditingName(true)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2">
-                  <Input
-                    value={nameTag}
-                    onChange={(event) => setNameTag(event.target.value)}
-                    maxLength={64}
-                    placeholder="e.g. Priya, Family Table 3"
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={() => void handleSaveNameTag()}
-                    disabled={isSavingName}
-                    variant="secondary"
-                  >
-                    {isSavingName ? 'Saving...' : 'Save'}
-                  </Button>
-                </div>
+                {isEditingName || !sessionPayload.session.display_name ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={nameTag}
+                      onChange={(event) => setNameTag(event.target.value)}
+                      maxLength={64}
+                      placeholder="e.g. Priya, Family Table 3"
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => void handleSaveNameTag()}
+                      disabled={isSavingName}
+                      variant="secondary"
+                    >
+                      {isSavingName ? 'Saving...' : 'Save'}
+                    </Button>
+                    {isEditingName && sessionPayload.session.display_name && (
+                      <Button
+                        onClick={handleCancelEditName}
+                        variant="outline"
+                        disabled={isSavingName}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-base font-medium">
+                    {sessionPayload.session.display_name}
+                  </p>
+                )}
               </CardContent>
             </Card>
 

@@ -46,7 +46,7 @@ type CompressionMode = 'compressed' | 'raw';
 interface CreateEventFormState {
   name: string;
   eventDate: string;
-  startsAt: string;
+  endDate: string;
   maxGuests: string;
   maxUploadsPerGuest: string;
   compressionMode: CompressionMode;
@@ -56,7 +56,7 @@ interface CreateEventFormState {
 const DEFAULT_FORM: CreateEventFormState = {
   name: '',
   eventDate: new Date().toISOString().slice(0, 10),
-  startsAt: '',
+  endDate: new Date().toISOString().slice(0, 10),
   maxGuests: '100',
   maxUploadsPerGuest: '10',
   compressionMode: 'compressed',
@@ -96,13 +96,6 @@ function getStatusVariant(status: EventSummary['status']): 'default' | 'secondar
 
 function formatAmountMinor(amount: number, currency: string): string {
   return `${currency} ${(amount / 100).toFixed(2)}`;
-}
-
-function toIsoFromLocalDateTimeInput(value: string): string | null {
-  if (!value.trim()) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
 }
 
 export function OrganizerShell() {
@@ -165,7 +158,6 @@ export function OrganizerShell() {
 
     const maxGuests = Number.parseInt(form.maxGuests, 10);
     const maxUploadsPerGuest = Number.parseInt(form.maxUploadsPerGuest, 10);
-    const startsAtIso = toIsoFromLocalDateTimeInput(form.startsAt);
 
     if (!form.name.trim()) {
       setCreateError('Event name is required.');
@@ -185,6 +177,12 @@ export function OrganizerShell() {
       return;
     }
 
+    if (form.endDate < form.eventDate) {
+      setCreateError('End date must be on or after event date.');
+      setIsCreating(false);
+      return;
+    }
+
     if (form.pin && !/^\d{4}$/.test(form.pin)) {
       setCreateError('PIN must be exactly 4 digits.');
       setIsCreating(false);
@@ -195,7 +193,7 @@ export function OrganizerShell() {
       const response = await organizerApi.createEvent({
         name: form.name.trim(),
         event_date: form.eventDate,
-        starts_at: startsAtIso,
+        end_date: form.endDate,
         max_guests: maxGuests,
         max_uploads_per_guest: maxUploadsPerGuest,
         compression_mode: form.compressionMode,
@@ -329,6 +327,7 @@ export function OrganizerShell() {
                       <CardDescription className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {item.event_date}
+                        {item.end_date !== item.event_date ? ` - ${item.end_date}` : ''}
                       </CardDescription>
                     </CardHeader>
 
@@ -440,12 +439,14 @@ export function OrganizerShell() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="starts-at">Starts at (optional)</Label>
+                <Label htmlFor="end-date">End date</Label>
                 <Input
-                  id="starts-at"
-                  type="datetime-local"
-                  value={form.startsAt}
-                  onChange={(next) => setForm((current) => ({ ...current, startsAt: next.target.value }))}
+                  id="end-date"
+                  type="date"
+                  min={form.eventDate}
+                  value={form.endDate}
+                  onChange={(next) => setForm((current) => ({ ...current, endDate: next.target.value }))}
+                  required
                 />
               </div>
             </div>

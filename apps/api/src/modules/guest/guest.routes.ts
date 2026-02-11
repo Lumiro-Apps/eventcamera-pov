@@ -6,11 +6,13 @@ import {
   guestGetMySession,
   guestGetMyUploads,
   guestJoinEvent,
+  guestLookupEvent,
   guestPatchMySession
 } from './guest.controller';
 
 const guestRouter = Router();
 
+guestRouter.post('/lookup-event', guestLookupEvent);
 guestRouter.post('/join', guestJoinEvent);
 guestRouter
   .route('/my-session')

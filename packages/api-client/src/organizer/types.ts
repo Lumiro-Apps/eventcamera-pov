@@ -22,8 +22,7 @@ export interface EventSummary {
   total_fee: number;
   currency: CurrencyCode;
   event_date: string;
-  starts_at: string | null;
-  expires_at: string;
+  end_date: string;
   guest_url?: string;
   total_uploads?: number;
   guest_count?: number;
@@ -39,7 +38,7 @@ export interface EventDetail extends EventSummary {
 export interface CreateEventRequest {
   name: string;
   event_date: string;
-  starts_at?: string | null;
+  end_date?: string;
   max_guests: number;
   max_uploads_per_guest: number;
   compression_mode?: CompressionMode;

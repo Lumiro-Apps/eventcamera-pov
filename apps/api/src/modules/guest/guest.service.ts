@@ -42,7 +42,8 @@ interface DbEventRow {
   max_guests: number;
   max_uploads_per_guest: number;
   compression_mode: CompressionMode;
-  expires_at: Date | string;
+  event_date: Date | string;
+  end_date: Date | string;
   pin_hash: string | null;
 }
 
@@ -68,7 +69,8 @@ interface DbGuestSessionRow {
   max_uploads_per_guest: number;
   max_guests: number;
   compression_mode: CompressionMode;
-  expires_at: Date | string;
+  event_date: Date | string;
+  end_date: Date | string;
 }
 
 interface DbUploadCountRow {
@@ -118,6 +120,8 @@ interface ResolvedGuestSession {
     max_uploads_per_guest: number;
     max_guests: number;
     compression_mode: CompressionMode;
+    event_date: string;
+    end_date: string;
     expires_at: string;
   };
 }
@@ -291,24 +295,29 @@ function toIsoDateTime(value: Date | string | null): string | null {
   return parsed.toISOString();
 }
 
+function toIsoDate(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function toEndOfDayIso(date: string): string {
+  const closeAt =
+    new Date(`${date}T23:59:59.999Z`).getTime() + 13 * 60 * 60 * 1000;
+  return new Date(closeAt).toISOString();
+}
+
 function hashValue(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
 function ensureEventOpenForJoins(event: DbEventRow): void {
-  const expiresAt = new Date(event.expires_at);
-  if (event.status !== 'active' || Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) {
+  if (event.status !== 'active') {
     throw new AppError(403, 'EVENT_CLOSED', 'This event is not accepting guest joins');
   }
 }
 
 function ensureEventAcceptingUploads(session: ResolvedGuestSession): void {
-  const expiresAt = new Date(session.event.expires_at);
-  if (
-    session.event.status !== 'active' ||
-    Number.isNaN(expiresAt.getTime()) ||
-    expiresAt <= new Date()
-  ) {
+  if (session.event.status !== 'active') {
     throw new AppError(403, 'EVENT_CLOSED', 'This event is no longer accepting uploads');
   }
 }
@@ -360,7 +369,8 @@ async function getEventBySlug(slug: string): Promise<DbEventRow> {
         max_guests,
         max_uploads_per_guest,
         compression_mode,
-        expires_at,
+        event_date,
+        end_date,
         pin_hash
       FROM events
       WHERE slug = $1
@@ -401,7 +411,8 @@ async function resolveSessionFromToken(deviceSessionToken: string): Promise<Reso
         e.max_uploads_per_guest,
         e.max_guests,
         e.compression_mode,
-        e.expires_at
+        e.event_date,
+        e.end_date
       FROM touched t
       JOIN events e ON e.id = t.event_id
       LIMIT 1
@@ -435,7 +446,9 @@ async function resolveSessionFromToken(deviceSessionToken: string): Promise<Reso
       max_uploads_per_guest: row.max_uploads_per_guest,
       max_guests: row.max_guests,
       compression_mode: row.compression_mode,
-      expires_at: toIsoDateTime(row.expires_at) ?? new Date().toISOString()
+      event_date: toIsoDate(row.event_date),
+      end_date: toIsoDate(row.end_date),
+      expires_at: toEndOfDayIso(toIsoDate(row.end_date))
     }
   };
 }
@@ -549,7 +562,9 @@ async function joinEvent(input: JoinEventInput): Promise<{
         max_uploads_per_guest: event.max_uploads_per_guest,
         max_guests: event.max_guests,
         compression_mode: event.compression_mode,
-        expires_at: toIsoDateTime(event.expires_at) ?? new Date().toISOString()
+        event_date: toIsoDate(event.event_date),
+        end_date: toIsoDate(event.end_date),
+        expires_at: toEndOfDayIso(toIsoDate(event.end_date))
       },
       upload_count: 0,
       max_uploads: event.max_uploads_per_guest
@@ -866,7 +881,47 @@ async function getMyUploads(deviceSessionToken: string): Promise<{
   };
 }
 
+interface LookupEventInput {
+  event_slug?: unknown;
+}
+
+async function lookupEvent(input: LookupEventInput): Promise<{
+  id: string;
+  slug: string;
+  name: string;
+  status: EventStatus;
+  requires_pin: boolean;
+  end_date: string;
+  expires_at: string;
+  event_date: string;
+}> {
+  const payload = ensureObject(input);
+  const eventSlug = ensureSlug(payload.event_slug);
+
+  const event = await getEventBySlug(eventSlug);
+
+  const eventDate = toIsoDate(event.event_date);
+  const endDate = toIsoDate(event.end_date);
+  const isActive = event.status === 'active';
+
+  if (!isActive) {
+    throw new AppError(403, 'EVENT_CLOSED', 'This event is not accepting guest joins');
+  }
+
+  return {
+    id: event.id,
+    slug: event.slug,
+    name: event.name,
+    status: event.status,
+    requires_pin: Boolean(event.pin_hash),
+    end_date: endDate,
+    expires_at: toEndOfDayIso(endDate),
+    event_date: eventDate
+  };
+}
+
 export const guestService = {
+  lookupEvent,
   joinEvent,
   getMySession,
   patchMySession,
