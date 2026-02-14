@@ -110,6 +110,7 @@ export interface CompleteUploadResponse {
 export interface MyUploadItem {
   media_id: string;
   thumb_url: string;
+  original_url: string;
   status: 'uploaded' | 'pending' | 'failed' | 'expired' | 'hidden';
   uploaded_at: string | null;
   uploader_name?: string | null;

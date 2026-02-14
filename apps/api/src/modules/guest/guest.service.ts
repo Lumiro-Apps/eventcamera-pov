@@ -6,10 +6,12 @@ import {
   createSignedStorageObjectUrl,
   createSignedStorageUploadUrl,
   doesStorageObjectExist
-} from '../../lib/supabase';
+} from '../../lib/storage';
 import { AppError } from '../../shared/errors/app-error';
 
-type EventStatus = 'draft' | 'active' | 'closed' | 'archived' | 'purged';
+import { EventStatus } from '../../shared/types/event-status';
+
+// EventStatus type removed, imported from shared
 type CompressionMode = 'compressed' | 'raw';
 type MediaStatus = 'pending' | 'uploaded' | 'failed' | 'expired' | 'hidden';
 type RawFamily = 'standard' | 'raw';
@@ -311,13 +313,13 @@ function hashValue(value: string): string {
 }
 
 function ensureEventOpenForJoins(event: DbEventRow): void {
-  if (event.status !== 'active') {
+  if (event.status !== EventStatus.ACTIVE) {
     throw new AppError(403, 'EVENT_CLOSED', 'This event is not accepting guest joins');
   }
 }
 
 function ensureEventAcceptingUploads(session: ResolvedGuestSession): void {
-  if (session.event.status !== 'active') {
+  if (session.event.status !== EventStatus.ACTIVE) {
     throw new AppError(403, 'EVENT_CLOSED', 'This event is no longer accepting uploads');
   }
 }
@@ -826,6 +828,7 @@ async function getMyUploads(deviceSessionToken: string): Promise<{
   uploads: Array<{
     media_id: string;
     thumb_url: string;
+    original_url: string;
     status: MediaStatus;
     uploaded_at: string | null;
     uploader_name: string | null;
@@ -854,14 +857,19 @@ async function getMyUploads(deviceSessionToken: string): Promise<{
   );
 
   const uploads = await Promise.all(
-    uploadsResult.rows.map(async (item) => {
+    uploadsResult.rows.map(async (item: DbMediaListRow) => {
       const path = item.thumb_path ?? item.storage_path;
       const bucket = item.thumb_path ? env.storageThumbsBucket : env.storageOriginalsBucket;
       const thumbUrl = await createSignedStorageObjectUrl(bucket, path);
+      const originalUrl = await createSignedStorageObjectUrl(
+        env.storageOriginalsBucket,
+        item.storage_path
+      );
 
       return {
         media_id: item.media_id,
         thumb_url: thumbUrl,
+        original_url: originalUrl,
         status: item.status,
         uploaded_at: toIsoDateTime(item.uploaded_at),
         uploader_name: item.uploader_name,
@@ -870,7 +878,7 @@ async function getMyUploads(deviceSessionToken: string): Promise<{
     })
   );
 
-  const totalUploaded = uploadsResult.rows.reduce((count, item) => {
+  const totalUploaded = uploadsResult.rows.reduce((count: number, item: DbMediaListRow) => {
     return item.status === 'uploaded' ? count + 1 : count;
   }, 0);
 

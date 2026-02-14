@@ -5,9 +5,10 @@
     "moduleResolution": "Node",
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"],
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

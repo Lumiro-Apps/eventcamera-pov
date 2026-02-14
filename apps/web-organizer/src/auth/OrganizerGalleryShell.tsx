@@ -685,17 +685,6 @@ export function OrganizerGalleryShell({ eventId }: OrganizerGalleryShellProps) {
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
           onClick={() => setPreviewIndex(null)}
         >
-          {/* Close button - larger touch target for mobile */}
-          <button
-            className="absolute top-4 right-4 text-white/80 hover:text-white p-3 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors z-10"
-            onClick={(e) => {
-              e.stopPropagation();
-              setPreviewIndex(null);
-            }}
-          >
-            <X className="h-7 w-7" />
-          </button>
-
           {/* Previous button */}
           {previewIndex > 0 && (
             <button
@@ -724,21 +713,15 @@ export function OrganizerGalleryShell({ eventId }: OrganizerGalleryShellProps) {
 
           {/* Image and details */}
           <div
-            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+            className="w-full max-w-[96vw] h-[92vh] flex flex-col gap-3 px-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
-              src={previewItem.thumb_url}
-              alt="Preview"
-              className="max-h-[70vh] max-w-full object-contain rounded-lg"
-            />
-
-            {/* Image info panel */}
-            <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-lg px-6 py-4 text-white min-w-[300px]">
+            {/* Header info bar */}
+            <div className="sticky top-0 z-20 bg-white/10 backdrop-blur-sm rounded-lg px-4 py-3 text-white">
               <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-medium">{previewItem.uploaded_by || 'Unknown'}</p>
-                  <p className="text-sm text-white/70">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{previewItem.uploaded_by || 'Unknown'}</p>
+                  <p className="text-sm text-white/70 truncate">
                     {new Date(previewItem.uploaded_at).toLocaleString()} • {bytesToHuman(previewItem.size_bytes)}
                   </p>
                   {previewItem.tags && previewItem.tags.length > 0 && (
@@ -751,11 +734,11 @@ export function OrganizerGalleryShell({ eventId }: OrganizerGalleryShellProps) {
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => window.open(previewItem.thumb_url, '_blank', 'noopener,noreferrer')}
+                    onClick={() => window.open(previewItem.original_url, '_blank', 'noopener,noreferrer')}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>
@@ -771,13 +754,28 @@ export function OrganizerGalleryShell({ eventId }: OrganizerGalleryShellProps) {
                     )}
                     Download
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPreviewIndex(null)}
+                  >
+                    Close
+                  </Button>
                 </div>
               </div>
+            </div>
 
-              {/* Navigation indicator */}
-              <div className="mt-3 text-center text-sm text-white/50">
-                {previewIndex + 1} of {galleryItems.length} • Use ← → to navigate, ESC to close
-              </div>
+            <div className="min-h-0 flex-1 flex items-center justify-center">
+              <img
+                src={previewItem.original_url}
+                alt="Preview"
+                className="max-h-full max-w-full object-contain rounded-lg"
+              />
+            </div>
+
+            {/* Navigation indicator */}
+            <div className="text-center text-sm text-white/50">
+              {previewIndex + 1} of {galleryItems.length} • Use ← → to navigate, ESC to close
             </div>
           </div>
         </div>

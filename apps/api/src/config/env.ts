@@ -75,6 +75,9 @@ function requireFirstEnv(names: string[]): string {
 }
 
 export const env = {
+  r2AccountId: requireEnv('R2_ACCOUNT_ID'),
+  r2AccessKeyId: requireEnv('R2_ACCESS_KEY_ID'),
+  r2SecretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parsePort(process.env.PORT),
   enableCronJobs: parseBoolean(process.env.ENABLE_CRON_JOBS, true),
@@ -86,9 +89,16 @@ export const env = {
   ]),
   supabaseSecretKey: requireFirstEnv(['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY']),
   supabaseDbUrl: requireEnv('SUPABASE_DB_URL'),
-  storageOriginalsBucket: process.env.SUPABASE_STORAGE_ORIGINALS_BUCKET ?? 'originals',
-  storageThumbsBucket: process.env.SUPABASE_STORAGE_THUMBS_BUCKET ?? 'thumbs',
-  storageArchiveBucket: process.env.SUPABASE_STORAGE_ARCHIVE_BUCKET ?? 'archives',
+  r2Endpoint: parseBaseUrl(
+    process.env.R2_ENDPOINT,
+    `https://${requireEnv('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`
+  ),
+  r2OriginalsBucket: process.env.R2_ORIGINALS_BUCKET ?? 'originals',
+  r2ThumbsBucket: process.env.R2_THUMBS_BUCKET ?? 'thumbs',
+  r2ArchiveBucket: process.env.R2_ARCHIVE_BUCKET ?? 'archives',
+  storageOriginalsBucket: process.env.R2_ORIGINALS_BUCKET ?? 'originals',
+  storageThumbsBucket: process.env.R2_THUMBS_BUCKET ?? 'thumbs',
+  storageArchiveBucket: process.env.R2_ARCHIVE_BUCKET ?? 'archives',
   signedUrlTtlSeconds: parsePositiveInt(
     process.env.SIGNED_URL_TTL_SECONDS,
     DEFAULT_SIGNED_URL_TTL_SECONDS

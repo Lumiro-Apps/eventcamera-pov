@@ -103,6 +103,7 @@ export interface GalleryQuery extends QueryParams {
 export interface GalleryItem {
   media_id: UUID;
   thumb_url: string;
+  original_url: string;
   uploaded_by?: string | null;
   tags?: string[];
   uploaded_at: string;

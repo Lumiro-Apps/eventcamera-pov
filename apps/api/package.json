@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; tsx watch src/server.ts'",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo 'API tests not configured yet.'",
-    "db:setup": "bash scripts/db/setup.sh",
-    "db:check": "bash scripts/db/check.sh"
+    "db:setup": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; bash scripts/db/setup.sh'",
+    "db:check": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; bash scripts/db/check.sh'"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.990.0",
+    "@aws-sdk/s3-request-presigner": "^3.990.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.2",

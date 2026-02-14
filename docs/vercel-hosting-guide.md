@@ -75,9 +75,13 @@ Set environment variables:
 - `SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SECRET_KEY`
 - `SUPABASE_DB_URL`
-- `SUPABASE_STORAGE_ORIGINALS_BUCKET=originals`
-- `SUPABASE_STORAGE_THUMBS_BUCKET=thumbs`
-- `SUPABASE_STORAGE_ARCHIVE_BUCKET=archives`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`
+- `R2_ORIGINALS_BUCKET=originals`
+- `R2_THUMBS_BUCKET=thumbs`
+- `R2_ARCHIVE_BUCKET=archives`
 - `SIGNED_URL_TTL_SECONDS=900`
 - `GUEST_WEB_BASE_URL=https://guest.eventpovcamera.app`
 

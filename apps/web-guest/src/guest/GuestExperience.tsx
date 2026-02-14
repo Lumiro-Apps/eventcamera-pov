@@ -1,7 +1,18 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Camera, Upload, User, RefreshCw, X, ImageIcon, Pencil } from 'lucide-react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Calendar,
+  Camera,
+  Upload,
+  User,
+  RefreshCw,
+  X,
+  ImageIcon,
+  Pencil,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 
 import {
   guestApi,
@@ -16,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { TagInput } from '@/components/tag-input';
 
 interface GuestExperienceProps {
   slug: string;
@@ -26,7 +38,8 @@ type DraftStatus = 'queued' | 'uploading' | 'uploaded' | 'failed';
 interface UploadDraft {
   id: string;
   file: File;
-  tagsText: string;
+  previewUrl: string;
+  tags: string[];
   status: DraftStatus;
   error: string | null;
 }
@@ -41,16 +54,6 @@ function formatApiError(error: unknown): string {
   }
 
   return 'Request failed';
-}
-
-function parseTagInput(value: string): string[] {
-  if (!value.trim()) return [];
-  const parsed = value
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-
-  return [...new Set(parsed)];
 }
 
 function generateDraftId(): string {
@@ -109,6 +112,15 @@ async function createThumbnailBlob(file: File): Promise<Blob | null> {
   });
 }
 
+async function createDraftPreviewUrl(file: File): Promise<string> {
+  const thumbnailBlob = await createThumbnailBlob(file);
+  if (thumbnailBlob) {
+    return URL.createObjectURL(thumbnailBlob);
+  }
+
+  return URL.createObjectURL(file);
+}
+
 function getStatusVariant(status: DraftStatus): 'default' | 'secondary' | 'success' | 'warning' | 'destructive' {
   switch (status) {
     case 'queued':
@@ -146,13 +158,74 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isUploadingAll, setIsUploadingAll] = useState(false);
+  const [previewUploadIndex, setPreviewUploadIndex] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const draftsRef = useRef<UploadDraft[]>([]);
 
   const uploadCountLabel = useMemo(() => {
     if (!sessionPayload) return '0 / 0';
     return `${sessionPayload.upload_count} / ${sessionPayload.max_uploads}`;
   }, [sessionPayload]);
+
+  const hasPendingDrafts = useMemo(
+    () => drafts.some((draft) => draft.status !== 'uploaded'),
+    [drafts]
+  );
+
+  const previewUpload = useMemo(() => {
+    if (previewUploadIndex === null || previewUploadIndex < 0 || previewUploadIndex >= uploads.length) {
+      return null;
+    }
+    return uploads[previewUploadIndex];
+  }, [previewUploadIndex, uploads]);
+
+  useEffect(() => {
+    if (previewUpload) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [previewUpload]);
+
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  useEffect(() => {
+    return () => {
+      for (const draft of draftsRef.current) {
+        URL.revokeObjectURL(draft.previewUrl);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (previewUploadIndex === null) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPreviewUploadIndex(null);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setPreviewUploadIndex((current) =>
+          current !== null && current > 0 ? current - 1 : current
+        );
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setPreviewUploadIndex((current) =>
+          current !== null && current < uploads.length - 1 ? current + 1 : current
+        );
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewUploadIndex, uploads.length]);
 
   const refreshSession = useCallback(async () => {
     const payload = await guestApi.getMySession();
@@ -215,6 +288,30 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
     );
   }
 
+  function removeDraft(draftId: string): void {
+    setDrafts((current) => {
+      const target = current.find((item) => item.id === draftId);
+      if (!target || target.status === 'uploading') {
+        return current;
+      }
+
+      URL.revokeObjectURL(target.previewUrl);
+      const nextDrafts = current.filter((item) => item.id !== draftId);
+      if (!nextDrafts.length) {
+        return [];
+      }
+
+      if (nextDrafts.every((item) => item.status === 'uploaded')) {
+        for (const item of nextDrafts) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+        return [];
+      }
+
+      return nextDrafts;
+    });
+  }
+
   async function uploadOne(draft: UploadDraft): Promise<void> {
     if (!sessionPayload) {
       setError('Session not ready. Reload and try again.');
@@ -242,7 +339,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
       const createUpload = await guestApi.createUpload({
         file_type: draft.file.type,
         file_size: draft.file.size,
-        tags: parseTagInput(draft.tagsText)
+        tags: draft.tags
       });
 
       const originalUpload = await fetch(createUpload.upload_url, {
@@ -337,18 +434,29 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
 
-    setDrafts((current) => [
-      ...current,
-      ...files.map((file) => ({
-        id: generateDraftId(),
-        file,
-        tagsText: '',
-        status: 'queued' as DraftStatus,
-        error: null
-      }))
-    ]);
-
     event.target.value = '';
+    void (async () => {
+      const nextDrafts = await Promise.all(
+        files.map(async (file) => ({
+          id: generateDraftId(),
+          file,
+          previewUrl: await createDraftPreviewUrl(file),
+          tags: [],
+          status: 'queued' as DraftStatus,
+          error: null
+        }))
+      );
+
+      setDrafts((current) => {
+        const pendingDrafts = current.filter((draft) => draft.status !== 'uploaded');
+        const uploadedDrafts = current.filter((draft) => draft.status === 'uploaded');
+        for (const draft of uploadedDrafts) {
+          URL.revokeObjectURL(draft.previewUrl);
+        }
+
+        return [...pendingDrafts, ...nextDrafts];
+      });
+    })();
   }
 
   async function handleUploadAll(): Promise<void> {
@@ -359,6 +467,16 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
       if (draft.status === 'uploaded') continue;
       await uploadOne(draft);
     }
+    setDrafts((current) => {
+      if (!current.length || !current.every((draft) => draft.status === 'uploaded')) {
+        return current;
+      }
+
+      for (const draft of current) {
+        URL.revokeObjectURL(draft.previewUrl);
+      }
+      return [];
+    });
     setIsUploadingAll(false);
   }
 
@@ -586,7 +704,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
                   />
                 </label>
 
-                {drafts.length > 0 && (
+                {hasPendingDrafts && (
                   <Button
                     onClick={() => void handleUploadAll()}
                     disabled={isUploadingAll}
@@ -600,7 +718,7 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
             </Card>
 
             {/* Upload Queue */}
-            {drafts.length > 0 && (
+            {hasPendingDrafts && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg">Upload Queue</CardTitle>
@@ -609,64 +727,55 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-3">
+                  <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {drafts.map((draft) => (
                       <li
                         key={draft.id}
-                        className="rounded-lg border bg-card p-4"
+                        className="overflow-hidden rounded-lg border bg-card"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-sm">
-                              {draft.file.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {Math.round(draft.file.size / 1024)} KB
-                            </p>
-                          </div>
-                          <Badge variant={getStatusVariant(draft.status)}>
-                            {draft.status}
-                          </Badge>
+                        <div className="relative aspect-square bg-muted">
+                          <img
+                            src={draft.previewUrl}
+                            alt={draft.file.name}
+                            className="h-full w-full object-cover"
+                          />
+                          <Button
+                            size="icon"
+                            variant="secondary"
+                            className="absolute right-2 top-2 h-8 w-8"
+                            onClick={() => removeDraft(draft.id)}
+                            disabled={draft.status === 'uploading'}
+                            aria-label={`Remove ${draft.file.name}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                          {draft.status !== 'queued' && (
+                            <Badge
+                              variant={getStatusVariant(draft.status)}
+                              className="absolute bottom-2 left-2 capitalize"
+                            >
+                              {draft.status}
+                            </Badge>
+                          )}
                         </div>
 
-                        <div className="mt-3 space-y-3">
-                          <Input
-                            value={draft.tagsText}
-                            onChange={(event) => patchDraft(draft.id, { tagsText: event.target.value })}
-                            placeholder="Tags (comma separated): stage, dance, family"
-                            className="text-sm"
+                        <div className="space-y-2 p-2">
+                          <TagInput
+                            label="Tags (comma separated)"
+                            value={draft.tags}
+                            onChange={(nextTags) => patchDraft(draft.id, { tags: nextTags })}
+                            disabled={draft.status === 'uploading'}
+                            placeholder="Add tag and press Enter"
                           />
+                          <p className="truncate text-xs text-muted-foreground">
+                            {draft.file.name}
+                          </p>
 
                           {draft.error && (
                             <Alert variant="destructive">
                               <AlertDescription>{draft.error}</AlertDescription>
                             </Alert>
                           )}
-
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => void uploadOne(draft)}
-                              disabled={draft.status === 'uploading' || draft.status === 'uploaded'}
-                              className="flex-1"
-                            >
-                              {draft.status === 'uploaded'
-                                ? 'Uploaded'
-                                : draft.status === 'uploading'
-                                  ? 'Uploading...'
-                                  : 'Upload'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                setDrafts((current) => current.filter((item) => item.id !== draft.id))
-                              }
-                              disabled={draft.status === 'uploading'}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
                         </div>
                       </li>
                     ))}
@@ -692,19 +801,23 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
               <CardContent>
                 {uploads.length > 0 ? (
                   <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {uploads.map((upload) => (
+                    {uploads.map((upload, index) => (
                       <li
                         key={upload.media_id}
                         className="overflow-hidden rounded-lg border bg-card"
                       >
-                        <div className="aspect-square">
+                        <button
+                          type="button"
+                          className="aspect-square w-full cursor-zoom-in"
+                          onClick={() => setPreviewUploadIndex(index)}
+                        >
                           <img
                             src={upload.thumb_url}
                             alt="Uploaded media preview"
                             loading="lazy"
                             className="h-full w-full object-cover"
                           />
-                        </div>
+                        </button>
                         <div className="p-2">
                           <p className="truncate text-xs font-medium">
                             {upload.uploader_name ?? 'No name tag'}
@@ -736,6 +849,90 @@ export function GuestExperience({ slug }: GuestExperienceProps) {
           <Alert variant="destructive" className="fixed bottom-4 left-4 right-4 mx-auto max-w-2xl">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
+        )}
+
+        {/* Fullscreen preview */}
+        {previewUpload && previewUploadIndex !== null && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            onClick={() => setPreviewUploadIndex(null)}
+          >
+            {previewUploadIndex > 0 && (
+              <button
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPreviewUploadIndex(previewUploadIndex - 1);
+                }}
+              >
+                <ChevronLeft className="h-8 w-8" />
+              </button>
+            )}
+
+            {previewUploadIndex < uploads.length - 1 && (
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPreviewUploadIndex(previewUploadIndex + 1);
+                }}
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
+            )}
+
+            <div
+              className="w-full max-w-[96vw] h-[92vh] flex flex-col gap-3 px-4"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="sticky top-0 z-20 bg-white/10 backdrop-blur-sm rounded-lg px-4 py-3 text-white">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{previewUpload.uploader_name ?? 'No name tag'}</p>
+                    <p className="text-sm text-white/70 truncate">
+                      {previewUpload.uploaded_at
+                        ? new Date(previewUpload.uploaded_at).toLocaleString()
+                        : 'Upload time unavailable'}{' '}
+                      • {previewUpload.status}
+                    </p>
+                    {previewUpload.tags && previewUpload.tags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {previewUpload.tags.map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="secondary"
+                            className="text-xs bg-white/20 text-white border-0"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPreviewUploadIndex(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 flex items-center justify-center">
+                <img
+                  src={previewUpload.original_url}
+                  alt="Uploaded media full preview"
+                  className="max-h-full max-w-full rounded-lg object-contain"
+                />
+              </div>
+
+              <div className="text-center text-sm text-white/50">
+                {previewUploadIndex + 1} of {uploads.length} • Use ← → to navigate, ESC to close
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </main>

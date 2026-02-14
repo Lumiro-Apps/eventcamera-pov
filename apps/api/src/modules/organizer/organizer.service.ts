@@ -3,11 +3,13 @@ import type { PoolClient } from 'pg';
 
 import { env } from '../../config/env';
 import { query, withTransaction } from '../../lib/db';
-import { createSignedStorageObjectUrl } from '../../lib/supabase';
+import { createSignedStorageObjectUrl } from '../../lib/storage';
 import { AppError } from '../../shared/errors/app-error';
 
+import { EventStatus } from '../../shared/types/event-status';
+
 type CompressionMode = 'compressed' | 'raw';
-type EventStatus = 'draft' | 'active' | 'closed' | 'archived' | 'purged';
+// EventStatus type removed, imported from shared
 type MediaStatus = 'uploaded' | 'hidden' | 'pending' | 'failed' | 'expired';
 type JobStatus = 'queued' | 'processing' | 'complete' | 'failed';
 
@@ -208,7 +210,7 @@ function ensureCompressionMode(value: unknown, fieldName: string): CompressionMo
     return value;
   }
 
-  throw new AppError(400, 'VALIDATION_ERROR', `${fieldName} must be either compressed or raw`, {
+  throw new AppError(400, 'VALIDATION_ERROR', `${fieldName} must be either compression or raw`, {
     field: fieldName
   });
 }
@@ -274,9 +276,9 @@ function toEventCloseIso(endDate: string): string {
 
 function resolveEventStatus(eventDate: string, endDate: string): EventStatus {
   const now = Date.now();
-  if (now < eventOpenAtMs(eventDate)) return 'draft';
-  if (now > eventCloseAtMs(endDate)) return 'closed';
-  return 'active';
+  if (now < eventOpenAtMs(eventDate)) return EventStatus.DRAFT;
+  if (now > eventCloseAtMs(endDate)) return EventStatus.CLOSED;
+  return EventStatus.ACTIVE;
 }
 
 function buildGuestUrl(slug: string): string {
@@ -742,11 +744,11 @@ class OrganizerService {
     ensureUuid(eventId, 'event_id');
 
     const current = await queryOwnedEventBase(organizerId, eventId);
-    if (current.status === 'archived' || current.status === 'purged') {
+    if (current.status === EventStatus.ARCHIVED || current.status === EventStatus.PURGED) {
       throw new AppError(409, 'INVALID_EVENT_STATE', 'Archived or purged events cannot be closed');
     }
 
-    await query('UPDATE events SET status = $1 WHERE id = $2::uuid', ['closed', eventId]);
+    await query('UPDATE events SET status = $1 WHERE id = $2::uuid', [EventStatus.CLOSED, eventId]);
     const event = await queryOwnedEventDetail(organizerId, eventId);
 
     return {
@@ -760,11 +762,11 @@ class OrganizerService {
     ensureUuid(eventId, 'event_id');
 
     const current = await queryOwnedEventBase(organizerId, eventId);
-    if (current.status === 'purged') {
+    if (current.status === EventStatus.PURGED) {
       throw new AppError(409, 'INVALID_EVENT_STATE', 'Purged events cannot be archived');
     }
 
-    await query('UPDATE events SET status = $1 WHERE id = $2::uuid', ['archived', eventId]);
+    await query('UPDATE events SET status = $1 WHERE id = $2::uuid', [EventStatus.ARCHIVED, eventId]);
     const event = await queryOwnedEventDetail(organizerId, eventId);
 
     return {
@@ -858,10 +860,14 @@ class OrganizerService {
         const thumbUrl = thumbPath
           ? await createSignedStorageObjectUrl(bucket, thumbPath)
           : `${env.guestWebBaseUrl}/e/${eventId}/missing-thumb`;
+        const originalUrl = item.storage_path
+          ? await createSignedStorageObjectUrl(env.storageOriginalsBucket, item.storage_path)
+          : thumbUrl;
 
         return {
           media_id: item.media_id,
           thumb_url: thumbUrl,
+          original_url: originalUrl,
           uploaded_by: item.uploaded_by,
           uploaded_at: toIsoDateTime(item.uploaded_at) ?? new Date().toISOString(),
           status: item.status,

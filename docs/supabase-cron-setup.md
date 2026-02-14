@@ -19,7 +19,7 @@ INTERNAL_CRON_API_TOKEN=<strong-random-token>
 ```sql
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
-create extension if not exists vault;
+create extension if not exists supabase_vault;
 ```
 
 ## 3) Store secrets in Vault

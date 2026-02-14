@@ -1,4 +1,5 @@
 import { query } from '../lib/db';
+import { EventStatus } from '../shared/types/event-status';
 
 const OPEN_EARLY_HOURS = 13;
 const CLOSE_LATE_HOURS = 13;
@@ -34,8 +35,8 @@ async function updateToActive(): Promise<number> {
     `
       WITH updated AS (
         UPDATE events
-        SET status = 'active'
-        WHERE status = 'draft'
+        SET status = $3
+        WHERE status = $4
           AND now() >= ((event_date::timestamp AT TIME ZONE 'UTC') - ($1::int * INTERVAL '1 hour'))
           AND now() <= (
             ((end_date::timestamp AT TIME ZONE 'UTC') + INTERVAL '1 day') +
@@ -46,7 +47,7 @@ async function updateToActive(): Promise<number> {
       SELECT COUNT(*)::int AS count
       FROM updated
     `,
-    [OPEN_EARLY_HOURS, CLOSE_LATE_HOURS]
+    [OPEN_EARLY_HOURS, CLOSE_LATE_HOURS, EventStatus.ACTIVE, EventStatus.DRAFT]
   );
 
   return result.rows[0]?.count ?? 0;
@@ -57,8 +58,8 @@ async function updateToClosed(): Promise<number> {
     `
       WITH updated AS (
         UPDATE events
-        SET status = 'closed'
-        WHERE status IN ('draft', 'active')
+        SET status = $2
+        WHERE status IN ($3, $4)
           AND now() > (
             ((end_date::timestamp AT TIME ZONE 'UTC') + INTERVAL '1 day') +
             ($1::int * INTERVAL '1 hour')
@@ -68,7 +69,7 @@ async function updateToClosed(): Promise<number> {
       SELECT COUNT(*)::int AS count
       FROM updated
     `,
-    [CLOSE_LATE_HOURS]
+    [CLOSE_LATE_HOURS, EventStatus.CLOSED, EventStatus.DRAFT, EventStatus.ACTIVE]
   );
 
   return result.rows[0]?.count ?? 0;
