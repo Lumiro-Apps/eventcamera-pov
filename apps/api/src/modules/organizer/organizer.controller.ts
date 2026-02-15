@@ -1,6 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 
 import { AppError } from '../../shared/errors/app-error';
+import {
+  clearOrganizerSessionCookie,
+  createOrganizerSessionFromSupabaseToken,
+  getOrganizerSessionTokenFromCookie,
+  revokeOrganizerSessionByToken,
+  setOrganizerSessionCookie
+} from './organizer-session';
 import { organizerService } from './organizer.service';
 
 function getOrganizerId(req: Request): string {
@@ -22,6 +29,17 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function parseBearerToken(headerValue: string | undefined): string | null {
+  if (!headerValue) return null;
+
+  const [scheme, token] = headerValue.split(' ');
+  if (!scheme || !token) return null;
+  if (scheme.toLowerCase() !== 'bearer') return null;
+  if (!token.trim()) return null;
+
+  return token.trim();
+}
+
 function asyncHandler(
   handler: (req: Request, res: Response) => Promise<void>
 ): (req: Request, res: Response, next: NextFunction) => void {
@@ -34,6 +52,53 @@ export const organizerCreateEvent = asyncHandler(async (req, res) => {
   const organizerId = getOrganizerId(req);
   const payload = await organizerService.createEvent(organizerId, req.body);
   res.status(200).json(payload);
+});
+
+export const organizerCreateSession = asyncHandler(async (req, res) => {
+  const bearerToken = parseBearerToken(req.header('authorization'));
+  if (!bearerToken) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Missing organizer bearer token');
+  }
+
+  const payload = await createOrganizerSessionFromSupabaseToken(
+    bearerToken,
+    req.header('user-agent')
+  );
+  setOrganizerSessionCookie(res, payload.session_token);
+
+  res.status(200).json({
+    organizer: payload.organizer,
+    session: {
+      expires_at: payload.expires_at
+    }
+  });
+});
+
+export const organizerGetSession = asyncHandler(async (req, res) => {
+  const organizerId = getOrganizerId(req);
+  res.status(200).json({
+    organizer: {
+      id: organizerId,
+      email: req.organizer?.email ?? null,
+      name: req.organizer?.name ?? null
+    },
+    session: {
+      auth_method: req.organizer?.auth_method ?? 'session',
+      expires_at: req.organizer?.session_expires_at ?? null
+    }
+  });
+});
+
+export const organizerDeleteSession = asyncHandler(async (req, res) => {
+  const sessionToken = getOrganizerSessionTokenFromCookie(req);
+  if (sessionToken) {
+    await revokeOrganizerSessionByToken(sessionToken);
+  }
+
+  clearOrganizerSessionCookie(res);
+  res.status(200).json({
+    success: true
+  });
 });
 
 export const organizerListEvents = asyncHandler(async (req, res) => {

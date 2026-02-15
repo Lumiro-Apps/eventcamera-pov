@@ -12,10 +12,19 @@ interface MediaCleanupRow {
   thumb_path: string | null;
 }
 
+interface CountRow {
+  count: number;
+}
+
 export interface MediaRetentionCleanupResult {
-  processed: number;
-  cleaned: number;
-  failed: number;
+  media: {
+    processed: number;
+    cleaned: number;
+    failed: number;
+  };
+  organizer_sessions: {
+    deleted_expired: number;
+  };
   retention_days: number;
   executed_at: string;
 }
@@ -89,6 +98,22 @@ async function markCleanupFailure(mediaId: string, errorMessage: string): Promis
   );
 }
 
+async function cleanupExpiredOrganizerSessions(): Promise<number> {
+  const result = await query<CountRow>(
+    `
+      WITH deleted AS (
+        DELETE FROM organizer_sessions
+        WHERE expires_at <= now()
+        RETURNING 1
+      )
+      SELECT COUNT(*)::int AS count
+      FROM deleted
+    `
+  );
+
+  return result.rows[0]?.count ?? 0;
+}
+
 export async function runMediaRetentionCleanupOnce(): Promise<MediaRetentionCleanupResult> {
   const candidates = await fetchCleanupCandidates(MAX_MEDIA_PER_RUN);
 
@@ -111,10 +136,17 @@ export async function runMediaRetentionCleanupOnce(): Promise<MediaRetentionClea
     }
   }
 
+  const deletedExpiredSessions = await cleanupExpiredOrganizerSessions();
+
   return {
-    processed: candidates.length,
-    cleaned,
-    failed,
+    media: {
+      processed: candidates.length,
+      cleaned,
+      failed
+    },
+    organizer_sessions: {
+      deleted_expired: deletedExpiredSessions
+    },
     retention_days: RETENTION_DAYS,
     executed_at: new Date().toISOString()
   };
@@ -125,7 +157,7 @@ export function startMediaRetentionCleanupCron(): void {
     void runMediaRetentionCleanupOnce()
       .then((result) => {
         console.log(
-          `[cron] media retention cleanup complete: processed=${result.processed}, cleaned=${result.cleaned}, failed=${result.failed}, retention_days=${result.retention_days}`
+          `[cron] media retention cleanup complete: media_processed=${result.media.processed}, media_cleaned=${result.media.cleaned}, media_failed=${result.media.failed}, expired_organizer_sessions_deleted=${result.organizer_sessions.deleted_expired}, retention_days=${result.retention_days}`
         );
       })
       .catch((error) => {

@@ -23,10 +23,9 @@ All organizer UI implementations must follow these non-optional guidelines:
 Supabase Auth handles all organizer authentication. Supported methods:
 
 - Email + password
-- Magic link (passwordless email)
-- Google OAuth
+- Email verification during sign-up (via confirmation email)
 
-On successful login, Supabase issues a JWT (access token + refresh token). All organizer API endpoints require a valid JWT in the `Authorization: Bearer <token>` header.
+On successful login, Supabase issues a JWT (access token + refresh token). The organizer web app exchanges that bearer token for an API session cookie via `POST /api/organizer/auth/session`, and then calls organizer APIs with `credentials: include`. API endpoints still accept bearer tokens as a fallback for non-browser clients.
 
 ### Organizer Schema
 
@@ -62,7 +61,7 @@ For MVP, each event has a single owner. The `event_organizers` table is included
 **New organizer:**
 
 1. Opens the organizer app (e.g., `eventpovcamera.app`).
-2. Signs up with email + password or Google OAuth.
+2. Signs up with email + password.
 3. Supabase Auth creates the auth user.
 4. A trigger or post-signup hook creates the corresponding `organizers` row.
 5. Organizer is redirected to the dashboard.
@@ -70,16 +69,17 @@ For MVP, each event has a single owner. The `event_organizers` table is included
 **Returning organizer:**
 
 1. Opens the organizer app.
-2. Logs in via email/password, magic link, or Google.
-3. JWT is stored in the browser (managed by Supabase Auth client SDK).
-4. Redirected to the dashboard.
+2. Logs in via email/password.
+3. Supabase JWT is stored in the browser (managed by Supabase Auth client SDK).
+4. Web app calls `POST /api/organizer/auth/session` to set `organizer_session_token` cookie.
+5. Redirected to the dashboard.
 
 **Session management:**
 
-- Access tokens are short-lived (default: 1 hour).
-- Refresh tokens are used to silently renew sessions.
-- The Supabase client SDK handles token refresh automatically.
-- Logging out clears the JWT and invalidates the refresh token.
+- Supabase access tokens are short-lived (default: 1 hour) and refreshed by the Supabase client SDK.
+- API cookie session TTL is controlled by `ORGANIZER_SESSION_TTL_DAYS` (default: 7 days).
+- Organizer API session cookie is HttpOnly and scoped to `/api/organizer`.
+- Logging out clears the API session cookie and signs out from Supabase.
 
 ### Step 2: Dashboard
 
@@ -96,8 +96,8 @@ The organizer fills out a form:
 | Field             | Required | Default | Notes                                            |
 | ----------------- | -------- | ------- | ------------------------------------------------ |
 | Event name        | Yes      | —       | e.g., "Rohit & Jyoti's Wedding"                 |
-| Event date        | Yes      | —       | Date of the event                                |
-| Start time        | No       | Now     | When guests can begin uploading                  |
+| Event date        | Yes      | —       | Event start date (UTC)                           |
+| End date          | No       | Event date | Event end date (UTC, defaults to same day)   |
 | Max guests        | Yes      | 100     | Number of guests (free tier: 100)               |
 | Images per guest  | Yes      | 10      | Upload limit per guest (free tier: 10)          |
 | Uncompressed      | No       | Off     | Enable raw uploads (additional fee)             |
@@ -116,7 +116,7 @@ Example: 200 guests, 20 images/guest, compressed = ₹400
 
 **What the server does on `POST /api/organizer/events`:**
 
-1. Validates the JWT and identifies the organizer.
+1. Validates organizer auth (session cookie or bearer token) and identifies the organizer.
 2. Generates a unique `slug` for the event.
 3. Calculates the total fee based on guests, images/guest, and compression mode.
 4. If fee > 0:
@@ -317,7 +317,7 @@ Permanent deletion is a **prohibited action** for now. Only the background purge
 GET /api/organizer/events/:id/media/:media_id/download-url
 ```
 
-Returns a signed download URL for the original file (not the thumbnail). URL is short-lived (e.g., 15 minutes). The organizer's browser downloads the file directly from Supabase Storage.
+Returns a signed download URL for the original file (not the thumbnail). URL is short-lived (e.g., 15 minutes). The organizer's browser downloads the file directly from Cloudflare R2.
 
 **Bulk download (all photos):**
 

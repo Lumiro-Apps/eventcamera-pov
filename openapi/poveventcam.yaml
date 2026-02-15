@@ -3,9 +3,10 @@ info:
   title: POV EventCamera API
   version: 0.1.0-draft
   description: |
-    Draft OpenAPI contract for POV Cam guest and organizer APIs.
-    This spec mirrors the current architecture docs and is intended as the
-    starting point for typed client generation and server contract tests.
+    OpenAPI contract for POV EventCamera guest and organizer APIs.
+    Organizer routes support either an HttpOnly organizer session cookie
+    or direct Supabase bearer auth (for non-browser clients).
+    Guest routes use an HttpOnly guest device session cookie.
 servers:
   - url: https://eventpovcamera.app
     description: Organizer web entry domain
@@ -14,14 +15,46 @@ servers:
   - url: http://localhost:3000
     description: Local development
 tags:
+  - name: System
   - name: Guest
+  - name: OrganizerAuth
   - name: OrganizerEvents
   - name: OrganizerMedia
   - name: OrganizerGuests
   - name: OrganizerJobs
+  - name: Internal
   - name: Webhooks
 
 paths:
+  /api/lookup-event:
+    post:
+      tags: [Guest]
+      summary: Lookup event details before joining
+      operationId: guestLookupEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupEventRequest'
+      responses:
+        '200':
+          description: Event is available for joining
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LookupEventResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/join:
     post:
       tags: [Guest]
@@ -199,12 +232,76 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/organizer/auth/session:
+    post:
+      tags: [OrganizerAuth]
+      summary: Create organizer API session cookie from Supabase bearer token
+      operationId: organizerCreateSession
+      security:
+        - OrganizerBearerAuth: []
+      responses:
+        '200':
+          description: Organizer session created
+          headers:
+            Set-Cookie:
+              description: HttpOnly organizer session cookie scoped to /api/organizer
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizerSessionCreateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      tags: [OrganizerAuth]
+      summary: Get current organizer session/identity
+      operationId: organizerGetSession
+      security:
+        - OrganizerSessionCookie: []
+        - OrganizerBearerAuth: []
+      responses:
+        '200':
+          description: Organizer session/identity resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizerSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [OrganizerAuth]
+      summary: Revoke current organizer cookie session (idempotent)
+      operationId: organizerDeleteSession
+      responses:
+        '200':
+          description: Session revoked (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizerSessionDeleteResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/organizer/events:
     post:
       tags: [OrganizerEvents]
       summary: Create organizer event
       operationId: organizerCreateEvent
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -240,6 +337,7 @@ paths:
       summary: List events for organizer
       operationId: organizerListEvents
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       responses:
         '200':
@@ -267,6 +365,7 @@ paths:
       summary: Get event detail and summary stats
       operationId: organizerGetEvent
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -296,6 +395,7 @@ paths:
       summary: Update event settings
       operationId: organizerPatchEvent
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -336,6 +436,7 @@ paths:
       summary: Close event (stop accepting guest uploads)
       operationId: organizerCloseEvent
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -363,6 +464,7 @@ paths:
       summary: Archive event
       operationId: organizerArchiveEvent
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -390,6 +492,7 @@ paths:
       summary: Get paginated media gallery for event
       operationId: organizerGetGallery
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -424,6 +527,7 @@ paths:
       summary: Get event gallery stats
       operationId: organizerGetGalleryStats
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -451,6 +555,7 @@ paths:
       summary: Hide one media item
       operationId: organizerHideMedia
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -479,6 +584,7 @@ paths:
       summary: Unhide one media item
       operationId: organizerUnhideMedia
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -507,6 +613,7 @@ paths:
       summary: Hide multiple media items
       operationId: organizerBulkHideMedia
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -542,6 +649,7 @@ paths:
       summary: Get signed download URL for original media
       operationId: organizerGetMediaDownloadUrl
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -564,12 +672,49 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/organizer/events/{id}/media/download-urls:
+    post:
+      tags: [OrganizerMedia]
+      summary: Get signed download URLs for multiple media items (max 100)
+      operationId: organizerGetMediaDownloadUrls
+      security:
+        - OrganizerSessionCookie: []
+        - OrganizerBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownloadUrlsBatchRequest'
+      responses:
+        '200':
+          description: Batch download URLs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlsBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/organizer/events/{id}/download-all:
     post:
       tags: [OrganizerMedia]
       summary: Trigger async ZIP job for event downloads
       operationId: organizerDownloadAll
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -581,7 +726,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DownloadAllRequest'
       responses:
-        '202':
+        '200':
           description: Job accepted
           content:
             application/json:
@@ -606,6 +751,7 @@ paths:
       summary: Trigger async ZIP job for selected media downloads
       operationId: organizerDownloadSelected
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -617,7 +763,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DownloadSelectedRequest'
       responses:
-        '202':
+        '200':
           description: Job accepted
           content:
             application/json:
@@ -642,6 +788,7 @@ paths:
       summary: Poll async job status
       operationId: organizerGetJobStatus
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/JobId'
@@ -669,6 +816,7 @@ paths:
       summary: List event guest sessions
       operationId: organizerGetGuests
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -696,6 +844,7 @@ paths:
       summary: Deactivate guest session
       operationId: organizerDeactivateGuest
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -724,6 +873,7 @@ paths:
       summary: Update event capacity and pricing-sensitive settings
       operationId: organizerUpdateCapacity
       security:
+        - OrganizerSessionCookie: []
         - OrganizerBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/EventId'
@@ -758,37 +908,105 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /api/webhooks/payment:
-    post:
-      tags: [Webhooks]
-      summary: Payment provider webhook callback
-      operationId: paymentWebhook
-      security:
-        - WebhookSignature: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PaymentWebhookRequest'
+  /api/health:
+    get:
+      tags: [System]
+      summary: Service health check
+      operationId: systemHealth
       responses:
         '200':
-          description: Webhook accepted
+          description: API is healthy
           content:
             application/json:
               schema:
-                type: object
-                required: [received]
-                properties:
-                  received:
-                    type: boolean
-                    example: true
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/event-status-sync:
+    post:
+      tags: [Internal]
+      summary: Trigger event status reconciliation
+      operationId: internalEventStatusSync
+      security:
+        - InternalCronBearerAuth: []
+      responses:
+        '200':
+          description: Event status sync completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalRunResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '503':
+          description: Internal cron auth is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/data-cleanup:
+    post:
+      tags: [Internal]
+      summary: Trigger daily data cleanup (media retention + session cleanup)
+      operationId: internalDataCleanup
+      security:
+        - InternalCronBearerAuth: []
+      responses:
+        '200':
+          description: Data cleanup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalRunResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Internal cron auth is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/internal/media-retention-cleanup:
+    post:
+      tags: [Internal]
+      summary: Backward-compatible alias for data cleanup trigger
+      operationId: internalMediaRetentionCleanup
+      deprecated: true
+      security:
+        - InternalCronBearerAuth: []
+      responses:
+        '200':
+          description: Data cleanup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalRunResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Internal cron auth is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/webhooks/payment:
+    post:
+      tags: [Webhooks]
+      summary: Payment provider webhook callback (not yet implemented)
+      operationId: paymentWebhook
+      responses:
+        '501':
+          $ref: '#/components/responses/NotImplemented'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -798,14 +1016,18 @@ components:
       type: apiKey
       in: cookie
       name: device_session_token
+    OrganizerSessionCookie:
+      type: apiKey
+      in: cookie
+      name: organizer_session_token
     OrganizerBearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    WebhookSignature:
-      type: apiKey
-      in: header
-      name: X-Webhook-Signature
+    InternalCronBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
 
   parameters:
     EventId:
@@ -849,7 +1071,7 @@ components:
       schema:
         type: integer
         minimum: 1
-        maximum: 100
+        maximum: 200
         default: 50
     Sort:
       name: sort
@@ -927,6 +1149,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     TooManyRequests:
       description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotImplemented:
+      description: Endpoint scaffold exists but implementation is pending
       content:
         application/json:
           schema:
@@ -1013,6 +1241,8 @@ components:
         - max_uploads_per_guest
         - max_guests
         - compression_mode
+        - event_date
+        - end_date
         - expires_at
       properties:
         id:
@@ -1030,9 +1260,55 @@ components:
           type: integer
         compression_mode:
           $ref: '#/components/schemas/CompressionMode'
+        event_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
         expires_at:
           type: string
           format: date-time
+
+    LookupEventRequest:
+      type: object
+      required: [event_slug]
+      properties:
+        event_slug:
+          type: string
+
+    LookupEventResponse:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - status
+        - requires_pin
+        - end_date
+        - expires_at
+        - event_date
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/EventStatus'
+        requires_pin:
+          type: boolean
+        end_date:
+          type: string
+          format: date
+        expires_at:
+          type: string
+          format: date-time
+        event_date:
+          type: string
+          format: date
 
     JoinRequest:
       type: object
@@ -1161,12 +1437,15 @@ components:
 
     MyUploadItem:
       type: object
-      required: [media_id, thumb_url, status, uploaded_at]
+      required: [media_id, thumb_url, original_url, status, uploaded_at]
       properties:
         media_id:
           type: string
           format: uuid
         thumb_url:
+          type: string
+          format: uri
+        original_url:
           type: string
           format: uri
         status:
@@ -1213,10 +1492,9 @@ components:
         event_date:
           type: string
           format: date
-        starts_at:
+        end_date:
           type: string
-          format: date-time
-          nullable: true
+          format: date
         max_guests:
           type: integer
           minimum: 1
@@ -1248,8 +1526,10 @@ components:
         - total_fee
         - currency
         - event_date
-        - starts_at
-        - expires_at
+        - end_date
+        - guest_url
+        - total_uploads
+        - guest_count
         - created_at
       properties:
         id:
@@ -1275,13 +1555,9 @@ components:
         event_date:
           type: string
           format: date
-        starts_at:
+        end_date:
           type: string
-          format: date-time
-          nullable: true
-        expires_at:
-          type: string
-          format: date-time
+          format: date
         guest_url:
           type: string
           format: uri
@@ -1380,6 +1656,7 @@ components:
       required:
         - media_id
         - thumb_url
+        - original_url
         - uploaded_at
         - status
         - size_bytes
@@ -1389,6 +1666,9 @@ components:
           type: string
           format: uuid
         thumb_url:
+          type: string
+          format: uri
+        original_url:
           type: string
           format: uri
         uploaded_by:
@@ -1501,6 +1781,43 @@ components:
           type: string
           format: date-time
 
+    DownloadUrlsBatchRequest:
+      type: object
+      required: [media_ids]
+      properties:
+        media_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+
+    DownloadUrlsBatchItem:
+      type: object
+      required: [media_id, download_url, file_name]
+      properties:
+        media_id:
+          type: string
+          format: uuid
+        download_url:
+          type: string
+          format: uri
+        file_name:
+          type: string
+
+    DownloadUrlsBatchResponse:
+      type: object
+      required: [items, expires_at]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DownloadUrlsBatchItem'
+        expires_at:
+          type: string
+          format: date-time
+
     DownloadAllRequest:
       type: object
       properties:
@@ -1609,6 +1926,64 @@ components:
           type: integer
           minimum: 1
 
+    OrganizerSessionOrganizer:
+      type: object
+      required: [id, email, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+
+    OrganizerSessionInfo:
+      type: object
+      required: [expires_at]
+      properties:
+        auth_method:
+          type: string
+          enum: [session, bearer]
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    OrganizerSessionCreateResponse:
+      type: object
+      required: [organizer, session]
+      properties:
+        organizer:
+          $ref: '#/components/schemas/OrganizerSessionOrganizer'
+        session:
+          type: object
+          required: [expires_at]
+          properties:
+            expires_at:
+              type: string
+              format: date-time
+
+    OrganizerSessionResponse:
+      type: object
+      required: [organizer, session]
+      properties:
+        organizer:
+          $ref: '#/components/schemas/OrganizerSessionOrganizer'
+        session:
+          $ref: '#/components/schemas/OrganizerSessionInfo'
+
+    OrganizerSessionDeleteResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+
     DeactivateGuestResponse:
       type: object
       required: [success, session_id, is_active]
@@ -1635,6 +2010,30 @@ components:
           minimum: 1
         compression_mode:
           $ref: '#/components/schemas/CompressionMode'
+
+    HealthResponse:
+      type: object
+      required: [ok, service, request_id]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        service:
+          type: string
+          example: poveventcam-api
+        request_id:
+          type: string
+
+    InternalRunResponse:
+      type: object
+      required: [success, result]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        result:
+          type: object
+          additionalProperties: true
 
     PaymentWebhookRequest:
       type: object

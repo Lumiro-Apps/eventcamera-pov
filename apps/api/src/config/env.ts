@@ -1,5 +1,6 @@
 const DEFAULT_PORT = 3000;
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 15 * 60;
+const DEFAULT_ORGANIZER_SESSION_TTL_DAYS = 7;
 const DEFAULT_GUEST_WEB_BASE_URL = 'https://guest.eventpovcamera.app';
 
 function parseBoolean(input: string | undefined, fallback: boolean): boolean {
@@ -102,6 +103,10 @@ export const env = {
   signedUrlTtlSeconds: parsePositiveInt(
     process.env.SIGNED_URL_TTL_SECONDS,
     DEFAULT_SIGNED_URL_TTL_SECONDS
+  ),
+  organizerSessionTtlDays: parsePositiveInt(
+    process.env.ORGANIZER_SESSION_TTL_DAYS,
+    DEFAULT_ORGANIZER_SESSION_TTL_DAYS
   ),
   corsAllowedOrigins: parseCsv(process.env.CORS_ALLOWED_ORIGINS),
   guestWebBaseUrl: parseBaseUrl(process.env.GUEST_WEB_BASE_URL, DEFAULT_GUEST_WEB_BASE_URL)

@@ -96,7 +96,7 @@ Response:
   "status": "active",
   "requires_pin": true,
   "end_date": "2026-02-15",
-  "expires_at": "2026-02-15T23:59:59Z",
+  "expires_at": "2026-02-16T12:59:59.999Z",
   "event_date": "2026-02-14"
 }
 ```
@@ -180,7 +180,7 @@ Body: { file_type: "image/jpeg", file_size: 2340000, tags: ["dance-floor", "fami
 The server:
 
 1. Validates the session cookie.
-2. Validates the event is active and not expired.
+2. Validates the event status is active (date-window logic is handled by status reconciliation jobs).
 3. Validates file type is allowed and file size is within limits.
 4. Runs an **atomic quota check and reservation** (per-guest limit):
 
@@ -293,9 +293,9 @@ function isRawFormat(filename) {
 
 The server validates `file_size` at `create-upload` and rejects files exceeding the limit for the event's compression mode.
 
-**6c. Direct Upload to Supabase Storage**
+**6c. Direct Upload to Cloudflare R2**
 
-The client uploads the compressed file directly to the signed URL. The file goes from the guest's phone straight to Supabase Storage (backed by S3). The API server never handles the file binary.
+The client uploads the compressed file directly to the signed URL. The file goes from the guest's phone straight to Cloudflare R2 (S3-compatible). The API server never handles the file binary.
 
 ```javascript
 await fetch(upload_url, {

@@ -38,7 +38,7 @@ export const internalEventStatusSync = asyncHandler(async (req, res) => {
   });
 });
 
-export const internalMediaRetentionCleanup = asyncHandler(async (req, res) => {
+export const internalDataCleanup = asyncHandler(async (req, res) => {
   assertInternalCronAuth(req);
 
   const result = await runMediaRetentionCleanupOnce();

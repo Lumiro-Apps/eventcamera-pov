@@ -5,7 +5,7 @@
 Define a production-oriented API architecture for POV Cam that supports:
 
 - Guest upload flows over cookie session auth
-- Organizer management flows over Supabase JWT auth
+- Organizer management flows over API session cookie auth (with bearer fallback)
 - Direct-to-storage upload/download using signed URLs
 - A typed API client layer shared by web apps
 
@@ -60,6 +60,7 @@ The API is organized as modules with explicit ownership.
 
 ### 4.1 Guest Module
 
+- `POST /api/lookup-event`
 - `POST /api/join`
 - `GET /api/my-session`
 - `PATCH /api/my-session`
@@ -69,6 +70,9 @@ The API is organized as modules with explicit ownership.
 
 ### 4.2 Organizer Module
 
+- `POST /api/organizer/auth/session`
+- `GET /api/organizer/auth/session`
+- `DELETE /api/organizer/auth/session`
 - Event CRUD/lifecycle endpoints
 - Gallery, moderation, downloads
 - Guest management
@@ -77,7 +81,8 @@ The API is organized as modules with explicit ownership.
 ### 4.3 Auth Module
 
 - Guest cookie auth middleware
-- Organizer JWT verification middleware
+- Organizer session-cookie middleware with Supabase bearer fallback
+- CSRF origin/referer checks for organizer session mutations
 - Shared authorization checks (event ownership/collaboration)
 
 ### 4.4 Media Module
@@ -208,8 +213,9 @@ The shared HTTP wrapper should provide:
   - Uses `credentials: 'include'`
   - Never reads auth cookie in JavaScript
 - Organizer client:
-  - Adds `Authorization: Bearer <token>`
-  - Token supplied by caller from Supabase SDK
+  - Web app uses `credentials: 'include'` with API session cookie
+  - Session cookie is created by `POST /api/organizer/auth/session` using a Supabase bearer token
+  - Non-browser clients can keep using `Authorization: Bearer <token>`
 
 ### 7.4 Client API Shape
 
@@ -253,7 +259,13 @@ Standard middleware order:
 
 ### 9.2 Organizer
 
-- Supabase JWT verification on each organizer endpoint
+- Organizer API endpoints accept either:
+  - `organizer_session_token` cookie (preferred for web), or
+  - Supabase bearer token (fallback/integration use cases)
+- Session cookie lifecycle:
+  - Create: `POST /api/organizer/auth/session`
+  - Read: `GET /api/organizer/auth/session`
+  - Revoke: `DELETE /api/organizer/auth/session`
 - Event-level authorization via `event_organizers`
 - Owner/collaborator role gates enforced in service layer
 

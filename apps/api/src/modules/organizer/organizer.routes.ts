@@ -1,12 +1,15 @@
 import { Router } from 'express';
 
 import { organizerAuthMiddleware } from '../../middleware/organizer-auth';
+import { organizerSessionCsrfMiddleware } from '../../middleware/organizer-session-csrf';
 
 import {
   organizerArchiveEvent,
   organizerBulkHideMedia,
   organizerCloseEvent,
+  organizerCreateSession,
   organizerCreateEvent,
+  organizerDeleteSession,
   organizerDeactivateGuest,
   organizerDownloadAll,
   organizerDownloadSelected,
@@ -14,6 +17,7 @@ import {
   organizerGetGallery,
   organizerGetGalleryStats,
   organizerGetGuests,
+  organizerGetSession,
   organizerGetMediaDownloadUrls,
   organizerGetJobStatus,
   organizerGetMediaDownloadUrl,
@@ -26,7 +30,12 @@ import {
 
 const organizerRouter = Router();
 
+organizerRouter.post('/auth/session', organizerCreateSession);
+organizerRouter.get('/auth/session', organizerAuthMiddleware, organizerGetSession);
+organizerRouter.delete('/auth/session', organizerSessionCsrfMiddleware, organizerDeleteSession);
+
 organizerRouter.use(organizerAuthMiddleware);
+organizerRouter.use(organizerSessionCsrfMiddleware);
 
 organizerRouter.route('/events').post(organizerCreateEvent).get(organizerListEvents);
 organizerRouter.route('/events/:id').get(organizerGetEvent).patch(organizerPatchEvent);

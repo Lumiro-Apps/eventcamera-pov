@@ -3,6 +3,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 
+import {
+  clearOrganizerApiSession,
+  createOrganizerApiSession,
+  getOrganizerApiSession
+} from '../lib/organizer-api';
 import { supabase } from '../lib/supabase';
 
 interface AuthContextValue {
@@ -20,21 +25,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+    async function ensureApiSession(nextSession: Session, forceCreate = false): Promise<void> {
+      if (forceCreate) {
+        await createOrganizerApiSession(nextSession.access_token);
+        return;
+      }
+
+      try {
+        await getOrganizerApiSession();
+      } catch {
+        await createOrganizerApiSession(nextSession.access_token);
+      }
+    }
+
+    async function applySession(nextSession: Session | null, forceCreate = false): Promise<void> {
+      if (!mounted) return;
+
+      if (!nextSession) {
+        setSession(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        await ensureApiSession(nextSession, forceCreate);
+        if (!mounted) return;
+        setSession(nextSession);
+      } catch (error) {
+        console.error('Failed to establish organizer API session', error);
+        if (!mounted) return;
+        setSession(null);
+        await supabase.auth.signOut();
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
     async function loadSession() {
       const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setSession(data.session ?? null);
-      setIsLoading(false);
+      await applySession(data.session ?? null);
     }
 
     void loadSession();
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (!mounted) return;
-      setSession(nextSession ?? null);
-      setIsLoading(false);
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      const forceCreate = event === 'SIGNED_IN';
+      void applySession(nextSession ?? null, forceCreate);
     });
 
     return () => {
@@ -48,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       isLoading,
       signOut: async () => {
+        await clearOrganizerApiSession();
         await supabase.auth.signOut();
       }
     }),

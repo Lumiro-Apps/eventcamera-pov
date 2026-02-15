@@ -3,7 +3,8 @@
 This setup triggers internal API cron endpoints from Supabase:
 
 - `POST /api/internal/event-status-sync` every 12 hours (`00:00` and `12:00` UTC)
-- `POST /api/internal/media-retention-cleanup` daily at `01:00` UTC
+- `POST /api/internal/data-cleanup` daily at `01:00` UTC
+  - this job also deletes expired organizer API sessions from `organizer_sessions`
 
 `npm run db:setup --workspace @poveventcam/api` now also applies migrations:
 
@@ -73,13 +74,13 @@ select cron.schedule(
 
 ```sql
 select cron.schedule(
-  'pov-media-retention-cleanup-0100',
+  'pov-data-cleanup-0100',
   '0 1 * * *',
   $$
   select
     net.http_post(
       url := (select decrypted_secret from vault.decrypted_secrets where name = 'pov_api_base_url')
-        || '/api/internal/media-retention-cleanup',
+        || '/api/internal/data-cleanup',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', 'Bearer ' || (
@@ -102,9 +103,9 @@ select cron.schedule(
 ```sql
 -- list jobs
 select * from cron.job
-where jobname in ('pov-event-status-sync-12h', 'pov-media-retention-cleanup-0100');
+where jobname in ('pov-event-status-sync-12h', 'pov-data-cleanup-0100');
 
 -- unschedule if needed
 select cron.unschedule('pov-event-status-sync-12h');
-select cron.unschedule('pov-media-retention-cleanup-0100');
+select cron.unschedule('pov-data-cleanup-0100');
 ```

@@ -32,7 +32,7 @@ import type {
 export type OrganizerTokenProvider = () => string | null | Promise<string | null>;
 
 export interface OrganizerClientConfig extends HttpClientConfig {
-  getAccessToken: OrganizerTokenProvider;
+  getAccessToken?: OrganizerTokenProvider;
 }
 
 export interface OrganizerApiClient {
@@ -123,7 +123,7 @@ export function createOrganizerApiClient(config: OrganizerClientConfig): Organiz
       responseType?: 'json' | 'text' | 'void';
     }
   ): Promise<T> {
-    const token = await resolveAccessToken(config.getAccessToken);
+    const token = config.getAccessToken ? await resolveAccessToken(config.getAccessToken) : undefined;
 
     return http.request<T>({
       method: options.method,

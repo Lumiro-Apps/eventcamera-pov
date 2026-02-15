@@ -1,4 +1,4 @@
--- Auto-provision Supabase cron for media retention cleanup.
+-- Auto-provision Supabase cron for daily data cleanup.
 -- This migration is idempotent and safe to rerun from scripts/db/setup.sh.
 
 DO $$
@@ -7,17 +7,17 @@ DECLARE
   has_cron_token_secret boolean;
 BEGIN
   IF to_regnamespace('cron') IS NULL THEN
-    RAISE NOTICE 'cron schema not found; skipping media retention cron provisioning.';
+    RAISE NOTICE 'cron schema not found; skipping data cleanup cron provisioning.';
     RETURN;
   END IF;
 
   IF to_regnamespace('net') IS NULL THEN
-    RAISE NOTICE 'net schema not found; skipping media retention cron provisioning.';
+    RAISE NOTICE 'net schema not found; skipping data cleanup cron provisioning.';
     RETURN;
   END IF;
 
   IF to_regclass('vault.decrypted_secrets') IS NULL THEN
-    RAISE NOTICE 'vault.decrypted_secrets not found; skipping media retention cron provisioning.';
+    RAISE NOTICE 'vault.decrypted_secrets not found; skipping data cleanup cron provisioning.';
     RETURN;
   END IF;
 
@@ -35,8 +35,12 @@ BEGIN
 
   IF NOT has_api_url_secret OR NOT has_cron_token_secret THEN
     RAISE NOTICE
-      'Vault secrets missing (pov_api_base_url and/or pov_internal_cron_token); skipping media retention cron provisioning.';
+      'Vault secrets missing (pov_api_base_url and/or pov_internal_cron_token); skipping data cleanup cron provisioning.';
     RETURN;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'pov-data-cleanup-0100') THEN
+    PERFORM cron.unschedule('pov-data-cleanup-0100');
   END IF;
 
   IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'pov-media-retention-cleanup-0100') THEN
@@ -44,13 +48,13 @@ BEGIN
   END IF;
 
   PERFORM cron.schedule(
-    'pov-media-retention-cleanup-0100',
+    'pov-data-cleanup-0100',
     '0 1 * * *',
     $cron$
     SELECT
       net.http_post(
         url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'pov_api_base_url')
-          || '/api/internal/media-retention-cleanup',
+          || '/api/internal/data-cleanup',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'Authorization', 'Bearer ' || (
@@ -67,6 +71,6 @@ BEGIN
     $cron$
   );
 
-  RAISE NOTICE 'Cron job pov-media-retention-cleanup-0100 has been created/updated.';
+  RAISE NOTICE 'Cron job pov-data-cleanup-0100 has been created/updated.';
 END;
 $$;

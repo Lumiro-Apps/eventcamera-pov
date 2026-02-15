@@ -1,7 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 
-import { query } from '../lib/db';
 import { verifySupabaseAccessToken } from '../lib/supabase';
+import {
+  ensureOrganizerRow,
+  getOrganizerSessionTokenFromCookie,
+  resolveOrganizerBySessionToken
+} from '../modules/organizer/organizer-session';
 import { AppError } from '../shared/errors/app-error';
 
 function parseBearerToken(headerValue: string | undefined): string | null {
@@ -15,49 +19,38 @@ function parseBearerToken(headerValue: string | undefined): string | null {
   return token.trim();
 }
 
-function fallbackNameFromEmail(email: string | null): string {
-  if (!email) {
-    return 'Organizer';
-  }
-
-  const localPart = email.split('@')[0]?.trim();
-  return localPart ? localPart : 'Organizer';
-}
-
-async function ensureOrganizerRow(input: {
-  id: string;
-  email: string | null;
-  name: string | null;
-}): Promise<void> {
-  await query(
-    `
-      INSERT INTO organizers (id, email, name)
-      VALUES ($1::uuid, $2, $3)
-      ON CONFLICT (id)
-      DO UPDATE SET
-        email = EXCLUDED.email,
-        name = organizers.name
-    `,
-    [input.id, input.email, input.name ?? fallbackNameFromEmail(input.email)]
-  );
-}
-
 export function organizerAuthMiddleware(req: Request, _res: Response, next: NextFunction): void {
-  const token = parseBearerToken(req.header('authorization'));
-
-  if (!token) {
-    next(new AppError(401, 'UNAUTHORIZED', 'Missing organizer bearer token'));
-    return;
-  }
+  const bearerToken = parseBearerToken(req.header('authorization'));
+  const sessionToken = getOrganizerSessionTokenFromCookie(req);
 
   void (async () => {
-    const user = await verifySupabaseAccessToken(token);
-    await ensureOrganizerRow(user);
+    if (bearerToken) {
+      const user = await verifySupabaseAccessToken(bearerToken);
+      await ensureOrganizerRow(user);
 
-    req.organizer = {
-      id: user.id,
-      email: user.email
-    };
+      req.organizer = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        auth_method: 'bearer',
+        session_expires_at: null
+      };
+      return;
+    }
+
+    if (sessionToken) {
+      const session = await resolveOrganizerBySessionToken(sessionToken);
+      req.organizer = {
+        id: session.organizer.id,
+        email: session.organizer.email,
+        name: session.organizer.name,
+        auth_method: 'session',
+        session_expires_at: session.session.expires_at
+      };
+      return;
+    }
+
+    throw new AppError(401, 'UNAUTHORIZED', 'Missing organizer authentication');
   })()
     .then(() => next())
     .catch(next);

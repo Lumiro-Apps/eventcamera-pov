@@ -59,11 +59,14 @@ This document tracks what is implemented vs what is pending.
 - [x] In-process cron scheduler runs at 00:00 and 12:00 UTC (`apps/api/src/cron/event-status-cron.ts`)
 - [x] Internal protected trigger endpoint (`POST /api/internal/event-status-sync`)
 - [x] Daily media retention cleanup cron at 01:00 UTC (`apps/api/src/cron/media-retention-cron.ts`)
-- [x] Internal protected retention endpoint (`POST /api/internal/media-retention-cleanup`)
+- [x] Internal protected data cleanup endpoint (`POST /api/internal/data-cleanup`)
 - [x] Enable/disable cron via env (`ENABLE_CRON_JOBS`)
 
 ### Organizer backend
-- [x] Organizer bearer-auth middleware with organizer upsert (`apps/api/src/middleware/organizer-auth.ts`)
+- [x] Organizer auth middleware with session-cookie + bearer fallback (`apps/api/src/middleware/organizer-auth.ts`)
+- [x] Organizer API session lifecycle endpoints (`POST/GET/DELETE /api/organizer/auth/session`)
+- [x] Organizer session storage + TTL migration (`0007_organizer_sessions.sql`)
+- [x] Organizer session CSRF origin/referer guard (`apps/api/src/middleware/organizer-session-csrf.ts`)
 - [x] Organizer service implemented against DB (`apps/api/src/modules/organizer/organizer.service.ts`)
 - [x] Events create/list/get/patch
 - [x] Event close/archive
@@ -101,7 +104,8 @@ This document tracks what is implemented vs what is pending.
 
 ### Organizer web app
 - [x] Next.js organizer app scaffold (`apps/web-organizer`)
-- [x] Supabase auth flows: password, sign-up, magic link, Google OAuth
+- [x] Supabase auth flows: password sign-in + sign-up (email verification)
+- [x] API session-cookie bootstrap from Supabase bearer token (`AuthProvider`)
 - [x] Auth provider/gate (`AuthProvider`, `OrganizerApp`, `OrganizerGalleryApp`)
 - [x] Shared organizer header component for dashboard and gallery (`OrganizerHeader`)
 - [x] Dashboard event list + create-event modal (`OrganizerShell`)
@@ -199,8 +203,11 @@ This document tracks what is implemented vs what is pending.
 ## Recent Changes (2026-02-15)
 
 - Switched storage implementation from Supabase Storage APIs to Cloudflare R2 helper (`apps/api/src/lib/storage.ts`).
+- Added organizer API session-cookie auth with bearer fallback and CSRF guard.
 - Added event lifecycle sync cron behavior for 00:00 and 12:00 UTC with 13-hour open/close buffers.
 - Added protected internal cron trigger endpoint and documented Supabase pg_cron setup.
+- Added daily generic data cleanup cron trigger (`/api/internal/data-cleanup`) with backward-compatible alias.
 - Added organizer batch media download URL API and wired organizer gallery to client-side selected-download ZIP flow.
 - Updated organizer UI with shared header, refreshed dashboard cards, and QR-based share modal.
 - Updated guest upload UX with local preview queue, tag input component, upload-all flow, queue purge behavior, and full-screen original-image preview.
+- Synced OpenAPI and architecture docs with current auth model, internal routes, and storage backend.
